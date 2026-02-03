@@ -1,15 +1,39 @@
 # Claude Dashboard
 
-A full-stack web application for tracking and visualizing Claude Code activity. Monitor sessions, browse implementation plans, manage tasks and todos, and view usage statistics through an intuitive dashboard interface.
+A web application for tracking and visualizing local Claude Code activity. Monitor sessions, browse implementation plans, tasks and todos, and view usage statistics.
+
+![Dashboard](docs/screenshots/dashboard.png)
 
 ## Features
 
-- **Analytics Dashboard** - Real-time statistics including sessions, messages, tool calls, and token usage with daily activity charts
-- **Plans Management** - Browse, search, and view markdown-based implementation plans
-- **Tasks Tracking** - View and manage tasks with status tracking and dependencies
-- **Todos Management** - Track todo items with priority levels organized by session
-- **Real-Time Updates** - Live synchronization via Server-Sent Events when data changes
+### Analytics & Insights
+- **8 Key Metrics** - Total sessions, messages, tool calls, tokens, averages per session, most active day, and peak hour
+- **Daily Activity Chart** - 30-day trend of messages and tool calls with interactive line graph
+- **Model Usage Chart** - Token distribution across Claude models (Opus, Sonnet, Haiku)
+- **Hourly Activity Chart** - Session distribution by hour to identify usage patterns
+
+### Plans Management
+- **Browse & Search** - Filter through all implementation plans with instant search
+- **Sort Options** - Order by newest or oldest creation date
+- **Markdown Rendering** - Full markdown support with syntax highlighting
+- **Metadata Display** - File size and creation date for each plan
+
+### Tasks Tracking
+- **Status Filtering** - Filter by All, Pending, In Progress, or Completed
+- **Session Grouping** - Tasks organized by their originating session with project names
+- **Dependency Visualization** - See which tasks block or are blocked by others
+- **Status Badges** - Color-coded status indicators (green/yellow/gray)
+
+### Todos Management
+- **Progress Tracking** - Visual progress bars showing completion status per session
+- **Session Cards** - Todo items grouped by session with completion counts (e.g., 4/5)
+- **Status Indicators** - Checkmarks for completed items, circles for pending
+
+### Global Features
+- **Global Search** - Quick search across all content with `Cmd+K`
 - **Dark/Light Mode** - Theme switching with system preference detection
+- **Real-Time Updates** - Live synchronization via Server-Sent Events when data changes
+- **Responsive Design** - Optimized layout for desktop viewing
 
 ## Tech Stack
 
@@ -34,7 +58,7 @@ A full-stack web application for tracking and visualizing Claude Code activity. 
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone git@github.com:ducrot/claude-dashboard.git
 cd claude-dashboard
 
 # Install all dependencies (root, client, and server)
