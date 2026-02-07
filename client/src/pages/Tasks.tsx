@@ -11,6 +11,7 @@ type StatusFilter = 'all' | 'pending' | 'in_progress' | 'completed'
 interface SessionGroup {
   sessionId: string
   sessionSummary?: string
+  firstPrompt?: string
   projectName?: string
   tasks: Task[]
   statusSummary: {
@@ -53,6 +54,7 @@ export default function Tasks() {
       result.push({
         sessionId,
         sessionSummary: firstTask?.sessionSummary,
+        firstPrompt: firstTask?.firstPrompt,
         projectName: firstTask?.projectName,
         tasks: sessionTasks.sort((a, b) => parseInt(a.id) - parseInt(b.id)),
         statusSummary: {
@@ -158,10 +160,21 @@ export default function Tasks() {
                   <FolderOpen className="h-4 w-4 text-muted-foreground" />
                   <div className="flex flex-col">
                     <span
-                      className="font-medium text-sm"
+                      className={cn(
+                        'font-medium text-sm',
+                        !group.sessionSummary && 'italic text-muted-foreground'
+                      )}
                       title={`Session: ${group.sessionId}`}
                     >
-                      {group.sessionSummary || 'Unnamed Session'}
+                      {group.sessionSummary
+                        || (group.firstPrompt && group.firstPrompt !== 'No prompt'
+                          ? group.firstPrompt.length > 100
+                            ? group.firstPrompt.slice(0, 100) + '...'
+                            : group.firstPrompt
+                          : null)
+                        || group.tasks[0]?.subject
+                        || group.projectName
+                        || 'Unnamed Session'}
                     </span>
                     {group.projectName && (
                       <span className="text-xs text-muted-foreground">

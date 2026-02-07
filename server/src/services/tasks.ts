@@ -13,6 +13,7 @@ export interface Task {
   blockedBy: string[]
   createdAt: string
   sessionSummary?: string
+  firstPrompt?: string
   projectPath?: string
   projectName?: string
 }
@@ -68,6 +69,7 @@ export async function listTasks(): Promise<Task[]> {
               blockedBy: rawTask.blockedBy || [],
               createdAt: stats.birthtime.toISOString(),
               sessionSummary: session?.summary,
+              firstPrompt: session?.firstPrompt,
               projectPath: session?.projectPath,
               projectName: extractProjectName(session?.projectPath),
             })

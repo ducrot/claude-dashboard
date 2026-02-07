@@ -21,6 +21,10 @@ npm run build
 npm start
 ```
 
+## Important
+
+Do NOT run `npm run dev` to start the dev server. Ask the user to start it if it is not already running.
+
 ## Architecture
 
 This is a monorepo with npm workspaces containing a React frontend (`client/`) and Express backend (`server/`).

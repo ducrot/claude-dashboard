@@ -42,9 +42,14 @@ export function TodoCard({ todo }: TodoCardProps) {
     <Card>
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-base">
-            Session: {todo.sessionId.slice(0, 8)}...
-          </CardTitle>
+          <div className="flex flex-col">
+            <CardTitle className="text-base">
+              {truncate(todo.sessionSummary || todo.projectName || `Session: ${todo.sessionId.slice(0, 8)}...`, 60)}
+            </CardTitle>
+            {todo.projectName && todo.sessionSummary && (
+              <span className="text-xs text-muted-foreground">{todo.projectName}</span>
+            )}
+          </div>
           <Badge variant={progressPercent === 100 ? 'success' : 'secondary'}>
             {completedCount}/{totalCount}
           </Badge>

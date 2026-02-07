@@ -33,6 +33,7 @@ export interface Task {
   blockedBy: string[]
   createdAt: string
   sessionSummary?: string
+  firstPrompt?: string
   projectPath?: string
   projectName?: string
 }
@@ -42,6 +43,8 @@ export interface Todo {
   filename: string
   items: TodoItem[]
   createdAt: string
+  sessionSummary?: string
+  projectName?: string
 }
 
 export interface TodoItem {
@@ -88,6 +91,30 @@ export interface Session {
   messageCount: number
 }
 
+export interface ProjectSummary {
+  name: string
+  encodedName: string
+  projectPath: string
+  sessionCount: number
+  totalMessages: number
+  lastActivity: string
+  firstActivity: string
+}
+
+export interface ProjectSession {
+  id: string
+  summary: string
+  firstPrompt?: string
+  createdAt: string
+  modified: string
+  messageCount: number
+  gitBranch?: string
+}
+
+export interface ProjectDetail extends ProjectSummary {
+  sessions: ProjectSession[]
+}
+
 export interface SearchResult {
   type: 'plan' | 'task' | 'todo'
   id: string
@@ -113,6 +140,10 @@ export const api = {
   },
   sessions: {
     list: () => fetchApi<Session[]>('/sessions'),
+  },
+  projects: {
+    list: () => fetchApi<ProjectSummary[]>('/projects'),
+    get: (encodedName: string) => fetchApi<ProjectDetail>(`/projects/${encodeURIComponent(encodedName)}`),
   },
   search: (query: string) => fetchApi<SearchResult[]>(`/search?q=${encodeURIComponent(query)}`),
 }
