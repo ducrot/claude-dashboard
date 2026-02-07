@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
+  FolderKanban,
   FileText,
   ListTodo,
   CheckSquare,
@@ -11,6 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'Projects', href: '/projects', icon: FolderKanban },
   { name: 'Plans', href: '/plans', icon: FileText },
   { name: 'Tasks', href: '/tasks', icon: ListTodo },
   { name: 'Todos', href: '/todos', icon: CheckSquare },
