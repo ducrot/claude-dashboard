@@ -3,6 +3,13 @@ import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, FolderOpen } from 'lucide-react'
 import { api, Task } from '@/lib/api'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { TaskCard } from '@/components/tasks'
 import { cn } from '@/lib/utils'
 
@@ -23,6 +30,7 @@ interface SessionGroup {
 
 export default function Tasks() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [projectFilter, setProjectFilter] = useState<string>('all')
   const [collapsedSessions, setCollapsedSessions] = useState<Set<string>>(new Set())
 
   const { data: tasks, isLoading, error } = useQuery({
@@ -30,13 +38,34 @@ export default function Tasks() {
     queryFn: api.tasks.list,
   })
 
+  const projectNames = useMemo(() => {
+    if (!tasks) return []
+    const names = new Set<string>()
+    for (const task of tasks) {
+      if (task.projectName) names.add(task.projectName)
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b))
+  }, [tasks])
+
   const filteredTasks = useMemo(() => {
     if (!tasks) return []
 
-    if (statusFilter === 'all') return tasks
+    let result = tasks
 
-    return tasks.filter((task) => task.status === statusFilter)
-  }, [tasks, statusFilter])
+    if (projectFilter !== 'all') {
+      if (projectFilter === '__unassigned__') {
+        result = result.filter((task) => !task.projectName)
+      } else {
+        result = result.filter((task) => task.projectName === projectFilter)
+      }
+    }
+
+    if (statusFilter !== 'all') {
+      result = result.filter((task) => task.status === statusFilter)
+    }
+
+    return result
+  }, [tasks, statusFilter, projectFilter])
 
   const sessionGroups = useMemo(() => {
     const groups = new Map<string, Task[]>()
@@ -76,13 +105,22 @@ export default function Tasks() {
   const statusCounts = useMemo(() => {
     if (!tasks) return { all: 0, pending: 0, in_progress: 0, completed: 0 }
 
-    return {
-      all: tasks.length,
-      pending: tasks.filter((t) => t.status === 'pending').length,
-      in_progress: tasks.filter((t) => t.status === 'in_progress').length,
-      completed: tasks.filter((t) => t.status === 'completed').length,
+    let projectTasks = tasks
+    if (projectFilter !== 'all') {
+      if (projectFilter === '__unassigned__') {
+        projectTasks = projectTasks.filter((t) => !t.projectName)
+      } else {
+        projectTasks = projectTasks.filter((t) => t.projectName === projectFilter)
+      }
     }
-  }, [tasks])
+
+    return {
+      all: projectTasks.length,
+      pending: projectTasks.filter((t) => t.status === 'pending').length,
+      in_progress: projectTasks.filter((t) => t.status === 'in_progress').length,
+      completed: projectTasks.filter((t) => t.status === 'completed').length,
+    }
+  }, [tasks, projectFilter])
 
   const toggleSession = (sessionId: string) => {
     setCollapsedSessions((prev) => {
@@ -121,23 +159,42 @@ export default function Tasks() {
         </p>
       </div>
 
-      {/* Status Filter */}
-      <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-        <TabsList>
-          <TabsTrigger value="all">
-            All ({statusCounts.all})
-          </TabsTrigger>
-          <TabsTrigger value="pending">
-            Pending ({statusCounts.pending})
-          </TabsTrigger>
-          <TabsTrigger value="in_progress">
-            In Progress ({statusCounts.in_progress})
-          </TabsTrigger>
-          <TabsTrigger value="completed">
-            Completed ({statusCounts.completed})
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      {/* Filters */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+          <TabsList>
+            <TabsTrigger value="all">
+              All ({statusCounts.all})
+            </TabsTrigger>
+            <TabsTrigger value="pending">
+              Pending ({statusCounts.pending})
+            </TabsTrigger>
+            <TabsTrigger value="in_progress">
+              In Progress ({statusCounts.in_progress})
+            </TabsTrigger>
+            <TabsTrigger value="completed">
+              Completed ({statusCounts.completed})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <Select value={projectFilter} onValueChange={setProjectFilter}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue placeholder="All Projects" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Projects</SelectItem>
+            {projectNames.map((name) => (
+              <SelectItem key={name} value={name}>
+                {name}
+              </SelectItem>
+            ))}
+            {tasks?.some((t) => !t.projectName) && (
+              <SelectItem value="__unassigned__">Unassigned</SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+      </div>
 
       {/* Tasks Grouped by Session */}
       <div className="space-y-4">
