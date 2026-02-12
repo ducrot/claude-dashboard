@@ -1,6 +1,7 @@
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { ArrowLeft, Brain, Calendar, FolderOpen } from 'lucide-react'
@@ -77,8 +78,9 @@ export default function MemoryDetail() {
         </CardHeader>
         <CardContent>
           <ScrollArea className="h-[calc(100vh-280px)]">
-            <article className="prose prose-sm dark:prose-invert max-w-none">
+            <article className="prose prose-sm dark:prose-invert max-w-3xl">
               <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
                 components={{
                   code({ className, children, ...props }) {
                     const match = /language-(\w+)/.exec(className || '')
