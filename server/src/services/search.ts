@@ -1,9 +1,10 @@
 import { listPlans, getPlan } from './plans.js'
 import { listTasks } from './tasks.js'
 import { listTodos } from './todos.js'
+import { listMemoryProjects } from './memory.js'
 
 export interface SearchResult {
-  type: 'plan' | 'task' | 'todo'
+  type: 'plan' | 'task' | 'todo' | 'memory'
   id: string
   title: string
   snippet: string
@@ -93,6 +94,26 @@ export async function search(query: string): Promise<SearchResult[]> {
         title: `Todo list (${todo.items.length} items)`,
         snippet: extractSnippet(matchingItems[0].content, query),
       })
+    }
+  }
+
+  // Search memory files
+  const memoryProjects = await listMemoryProjects()
+  for (const project of memoryProjects) {
+    for (const file of project.files) {
+      if (
+        file.title.toLowerCase().includes(lowerQuery) ||
+        file.filename.toLowerCase().includes(lowerQuery) ||
+        file.excerpt.toLowerCase().includes(lowerQuery) ||
+        project.projectName.toLowerCase().includes(lowerQuery)
+      ) {
+        results.push({
+          type: 'memory',
+          id: `${file.projectDir}/${file.filename}`,
+          title: `${file.title} (${project.projectName})`,
+          snippet: extractSnippet(file.excerpt, query),
+        })
+      }
     }
   }
 

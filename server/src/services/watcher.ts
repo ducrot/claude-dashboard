@@ -3,7 +3,7 @@ import { EventEmitter } from 'events'
 import { paths } from '../config/paths.js'
 
 export interface FileChangeEvent {
-  type: 'plans' | 'tasks' | 'todos' | 'stats' | 'sessions'
+  type: 'plans' | 'tasks' | 'todos' | 'stats' | 'sessions' | 'memory'
   path: string
 }
 
@@ -19,6 +19,7 @@ class FileWatcher extends EventEmitter {
       `${paths.todos}/**/*.json`,
       paths.statsCache,
       `${paths.projects}/**/sessions-index.json`,
+      `${paths.projects}/**/memory/*.md`,
     ]
 
     this.watcher = watch(watchPaths, {
@@ -42,6 +43,8 @@ class FileWatcher extends EventEmitter {
       type = 'tasks'
     } else if (filePath.includes('/todos/')) {
       type = 'todos'
+    } else if (filePath.includes('/memory/')) {
+      type = 'memory'
     } else if (filePath.includes('stats-cache.json')) {
       type = 'stats'
     } else if (filePath.includes('sessions-index.json')) {

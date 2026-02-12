@@ -5,6 +5,7 @@ import {
   FileText,
   ListTodo,
   CheckSquare,
+  Brain,
   Search
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -16,6 +17,7 @@ const navigation = [
   { name: 'Plans', href: '/plans', icon: FileText },
   { name: 'Tasks', href: '/tasks', icon: ListTodo },
   { name: 'Todos', href: '/todos', icon: CheckSquare },
+  { name: 'Memory', href: '/memory', icon: Brain },
 ]
 
 export function Sidebar() {

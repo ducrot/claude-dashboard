@@ -115,8 +115,31 @@ export interface ProjectDetail extends ProjectSummary {
   sessions: ProjectSession[]
 }
 
+export interface MemoryFileSummary {
+  filename: string
+  title: string
+  projectDir: string
+  projectPath: string
+  size: number
+  modifiedAt: string
+  excerpt: string
+}
+
+export interface MemoryFileDetail extends MemoryFileSummary {
+  content: string
+}
+
+export interface MemoryProject {
+  projectDir: string
+  projectPath: string
+  projectName: string
+  files: MemoryFileSummary[]
+  totalSize: number
+  lastModified: string
+}
+
 export interface SearchResult {
-  type: 'plan' | 'task' | 'todo'
+  type: 'plan' | 'task' | 'todo' | 'memory'
   id: string
   title: string
   snippet: string
@@ -144,6 +167,11 @@ export const api = {
   projects: {
     list: () => fetchApi<ProjectSummary[]>('/projects'),
     get: (encodedName: string) => fetchApi<ProjectDetail>(`/projects/${encodeURIComponent(encodedName)}`),
+  },
+  memory: {
+    list: () => fetchApi<MemoryProject[]>('/memory'),
+    get: (projectDir: string, filename: string) =>
+      fetchApi<MemoryFileDetail>(`/memory/${encodeURIComponent(projectDir)}/${encodeURIComponent(filename)}`),
   },
   search: (query: string) => fetchApi<SearchResult[]>(`/search?q=${encodeURIComponent(query)}`),
 }

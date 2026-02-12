@@ -8,6 +8,7 @@ import statsRouter from './routes/stats.js'
 import sessionsRouter from './routes/sessions.js'
 import searchRouter from './routes/search.js'
 import projectsRouter from './routes/projects.js'
+import memoryRouter from './routes/memory.js'
 import eventsRouter from './routes/events.js'
 
 const app = express()
@@ -25,6 +26,7 @@ app.use('/api/stats', statsRouter)
 app.use('/api/sessions', sessionsRouter)
 app.use('/api/search', searchRouter)
 app.use('/api/projects', projectsRouter)
+app.use('/api/memory', memoryRouter)
 app.use('/api/events', eventsRouter)
 
 // Health check

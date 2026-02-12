@@ -73,6 +73,11 @@ export function Header({ onMenuClick }: HeaderProps) {
       navigate('/tasks')
     } else if (result.type === 'todo') {
       navigate('/todos')
+    } else if (result.type === 'memory') {
+      const slashIndex = result.id.indexOf('/')
+      const projectDir = result.id.slice(0, slashIndex)
+      const filename = result.id.slice(slashIndex + 1)
+      navigate(`/memory/${encodeURIComponent(projectDir)}/${encodeURIComponent(filename)}`)
     }
   }
 
@@ -84,6 +89,8 @@ export function Header({ onMenuClick }: HeaderProps) {
         return '📋'
       case 'todo':
         return '✅'
+      case 'memory':
+        return '🧠'
     }
   }
 
@@ -135,7 +142,7 @@ export function Header({ onMenuClick }: HeaderProps) {
           </DialogHeader>
           <div className="mt-2">
             <Input
-              placeholder="Search plans, tasks, todos..."
+              placeholder="Search plans, tasks, todos, memory..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               autoFocus
