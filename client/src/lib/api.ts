@@ -138,6 +138,25 @@ export interface MemoryProject {
   lastModified: string
 }
 
+export interface SubAgent {
+  agentId: string
+  agentType: 'regular' | 'prompt_suggestion' | 'compact'
+  sessionId: string
+  projectDir: string
+  projectPath: string
+  projectName: string
+  prompt: string
+  model: string
+  messageCount: number
+  totalInputTokens: number
+  totalOutputTokens: number
+  toolsUsed: string[]
+  createdAt: string
+  completedAt: string
+  duration: number
+  gitBranch?: string
+}
+
 export interface SearchResult {
   type: 'plan' | 'task' | 'todo' | 'memory'
   id: string
@@ -167,6 +186,9 @@ export const api = {
   projects: {
     list: () => fetchApi<ProjectSummary[]>('/projects'),
     get: (encodedName: string) => fetchApi<ProjectDetail>(`/projects/${encodeURIComponent(encodedName)}`),
+  },
+  subagents: {
+    list: () => fetchApi<SubAgent[]>('/subagents'),
   },
   memory: {
     list: () => fetchApi<MemoryProject[]>('/memory'),

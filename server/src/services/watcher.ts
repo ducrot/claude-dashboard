@@ -1,9 +1,10 @@
 import { watch } from 'chokidar'
 import { EventEmitter } from 'events'
 import { paths } from '../config/paths.js'
+import { invalidateSubAgentsCache } from './subagents.js'
 
 export interface FileChangeEvent {
-  type: 'plans' | 'tasks' | 'todos' | 'stats' | 'sessions' | 'memory'
+  type: 'plans' | 'tasks' | 'todos' | 'stats' | 'sessions' | 'memory' | 'subagents'
   path: string
 }
 
@@ -20,6 +21,7 @@ class FileWatcher extends EventEmitter {
       paths.statsCache,
       `${paths.projects}/**/sessions-index.json`,
       `${paths.projects}/**/memory/*.md`,
+      `${paths.projects}/**/subagents/agent-*.jsonl`,
     ]
 
     this.watcher = watch(watchPaths, {
@@ -39,6 +41,8 @@ class FileWatcher extends EventEmitter {
 
     if (filePath.includes('/plans/')) {
       type = 'plans'
+    } else if (filePath.includes('/subagents/')) {
+      type = 'subagents'
     } else if (filePath.includes('/tasks/')) {
       type = 'tasks'
     } else if (filePath.includes('/todos/')) {
@@ -51,6 +55,10 @@ class FileWatcher extends EventEmitter {
       type = 'sessions'
     } else {
       return
+    }
+
+    if (type === 'subagents') {
+      invalidateSubAgentsCache()
     }
 
     this.emit('change', { type, path: filePath })

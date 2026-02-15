@@ -28,6 +28,8 @@ export function useSSE(options: SSEOptions = {}) {
           queryClient.invalidateQueries({ queryKey: ['stats'] })
         } else if (data.type === 'memory') {
           queryClient.invalidateQueries({ queryKey: ['memory'] })
+        } else if (data.type === 'subagents') {
+          queryClient.invalidateQueries({ queryKey: ['subagents'] })
         } else if (data.type === 'sessions') {
           queryClient.invalidateQueries({ queryKey: ['sessions'] })
           queryClient.invalidateQueries({ queryKey: ['projects'] })

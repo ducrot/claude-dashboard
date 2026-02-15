@@ -29,6 +29,13 @@ A web application for tracking and visualizing local Claude Code activity. Monit
 - **Session Cards** - Todo items grouped by session with completion counts (e.g., 4/5)
 - **Status Indicators** - Checkmarks for completed items, circles for pending
 
+### Sub-agents Browser
+- **Project Grouping** - Sub-agent transcripts organized by project with collapsible sections
+- **Agent Details** - Model badge, token usage (input/output), duration, message count, and tools used
+- **Filters** - Filter by project, model, prompt text search, and sort by recency, tokens, or duration
+- **Internal Agents** - Toggle to show/hide internal agents (prompt suggestions, compact summaries)
+- **Summary Stats** - Total agent count, token usage, and project count at a glance
+
 ### Memory Browser
 - **Project Grouping** - Auto memory files organized by project with collapsible sections
 - **Search & Sort** - Filter across project names, file titles, and content excerpts
@@ -98,7 +105,7 @@ npm start
 claude-dashboard/
 ├── client/                     # React frontend
 │   ├── src/
-│   │   ├── pages/             # Page components (Dashboard, Plans, Tasks, Todos, Memory)
+│   │   ├── pages/             # Page components (Dashboard, Plans, Tasks, Todos, SubAgents, Memory)
 │   │   ├── components/
 │   │   │   ├── ui/            # Reusable UI components
 │   │   │   ├── layout/        # Layout components (Sidebar, Header)
@@ -106,6 +113,7 @@ claude-dashboard/
 │   │   │   ├── plans/         # Plan display components
 │   │   │   ├── tasks/         # Task components
 │   │   │   ├── todos/         # Todo components
+│   │   │   ├── subagents/     # Sub-agent components
 │   │   │   └── memory/        # Memory components
 │   │   ├── hooks/             # Custom React hooks (useTheme, useSSE)
 │   │   ├── lib/               # API client and utilities
@@ -134,8 +142,10 @@ The application reads from the Claude Code local directory:
 ├── plans/              # Markdown plan files
 ├── tasks/              # Task JSON files
 ├── todos/              # Todo JSON files
-├── projects/           # Session index files and per-project memory
-│   └── <project>/memory/  # Auto memory markdown files
+├── projects/           # Session index files, sub-agents, and per-project memory
+│   └── <project>/
+│       ├── <session>/subagents/  # Sub-agent JSONL transcripts
+│       └── memory/               # Auto memory markdown files
 └── stats-cache.json    # Cached statistics
 ```
 
@@ -156,6 +166,7 @@ The application reads from the Claude Code local directory:
 | GET | `/api/stats` | Get statistics with chart data |
 | GET | `/api/stats/summary` | Get summary statistics |
 | GET | `/api/sessions` | List all sessions |
+| GET | `/api/subagents` | List all sub-agents across projects |
 | GET | `/api/memory` | List all projects with memory files |
 | GET | `/api/memory/:projectDir/:filename` | Get specific memory file |
 | GET | `/api/search?q=query` | Search across all content |

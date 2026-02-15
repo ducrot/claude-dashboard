@@ -7,6 +7,7 @@ import Tasks from '@/pages/Tasks'
 import Todos from '@/pages/Todos'
 import Projects from '@/pages/Projects'
 import ProjectDetail from '@/pages/ProjectDetail'
+import SubAgents from '@/pages/SubAgents'
 import Memory from '@/pages/Memory'
 import MemoryDetail from '@/pages/MemoryDetail'
 
@@ -22,6 +23,7 @@ function App() {
           <Route path="projects/:encodedName" element={<ProjectDetail />} />
           <Route path="tasks" element={<Tasks />} />
           <Route path="todos" element={<Todos />} />
+          <Route path="subagents" element={<SubAgents />} />
           <Route path="memory" element={<Memory />} />
           <Route path="memory/:projectDir/:filename" element={<MemoryDetail />} />
         </Route>

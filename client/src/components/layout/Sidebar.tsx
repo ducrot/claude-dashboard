@@ -5,6 +5,7 @@ import {
   FileText,
   ListTodo,
   CheckSquare,
+  Bot,
   Brain,
   Search
 } from 'lucide-react'
@@ -17,6 +18,7 @@ const navigation = [
   { name: 'Plans', href: '/plans', icon: FileText },
   { name: 'Tasks', href: '/tasks', icon: ListTodo },
   { name: 'Todos', href: '/todos', icon: CheckSquare },
+  { name: 'Sub-agents', href: '/subagents', icon: Bot },
   { name: 'Memory', href: '/memory', icon: Brain },
 ]
 
