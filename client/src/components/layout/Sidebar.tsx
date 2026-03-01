@@ -38,7 +38,9 @@ export function Sidebar() {
           <ScrollArea className="flex-1">
             <ul role="list" className="flex flex-1 flex-col gap-y-1">
               {navigation.map((item) => {
-                const isActive = location.pathname === item.href
+                const isActive = item.href === '/'
+                  ? location.pathname === '/'
+                  : location.pathname.startsWith(item.href)
                 return (
                   <li key={item.name}>
                     <Link

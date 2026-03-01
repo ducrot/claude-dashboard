@@ -23,6 +23,28 @@ export interface SubAgent {
   gitBranch?: string
 }
 
+export interface SubAgentContentBlock {
+  type: 'text' | 'tool_use' | 'tool_result'
+  text?: string
+  name?: string
+  input?: unknown
+  tool_use_id?: string
+  content?: string
+}
+
+export interface SubAgentMessage {
+  role: 'user' | 'assistant'
+  content: SubAgentContentBlock[]
+  timestamp: string
+  model?: string
+  inputTokens?: number
+  outputTokens?: number
+}
+
+export interface SubAgentDetail extends SubAgent {
+  messages: SubAgentMessage[]
+}
+
 interface SessionIndex {
   entries?: Array<{ sessionId?: string; projectPath?: string }>
   originalPath?: string
@@ -254,4 +276,166 @@ export async function listSubAgents(): Promise<SubAgent[]> {
 
   cache = { agents, timestamp: Date.now() }
   return agents
+}
+
+function parseMessageContent(message: { role: string; content: unknown }): SubAgentContentBlock[] {
+  const content = message.content
+  if (typeof content === 'string') {
+    return [{ type: 'text', text: content }]
+  }
+  if (Array.isArray(content)) {
+    return content.map((block: Record<string, unknown>) => {
+      if (block.type === 'text') {
+        return { type: 'text' as const, text: block.text as string }
+      }
+      if (block.type === 'tool_use') {
+        return {
+          type: 'tool_use' as const,
+          name: block.name as string,
+          tool_use_id: block.id as string,
+          input: block.input,
+        }
+      }
+      if (block.type === 'tool_result') {
+        const resultContent = block.content
+        let text = ''
+        if (typeof resultContent === 'string') {
+          text = resultContent
+        } else if (Array.isArray(resultContent)) {
+          text = resultContent
+            .filter((b: Record<string, unknown>) => b.type === 'text')
+            .map((b: Record<string, unknown>) => b.text)
+            .join('\n')
+        }
+        return {
+          type: 'tool_result' as const,
+          tool_use_id: block.tool_use_id as string,
+          content: text,
+        }
+      }
+      return { type: 'text' as const, text: JSON.stringify(block) }
+    })
+  }
+  return []
+}
+
+export async function getSubAgent(
+  projectDir: string,
+  sessionId: string,
+  agentId: string
+): Promise<SubAgentDetail> {
+  const filePath = join(paths.projects, projectDir, sessionId, 'subagents', `agent-${agentId}.jsonl`)
+  const projectMap = await buildProjectMap()
+  const projectInfo = projectMap.get(projectDir) || {
+    projectPath: projectDir,
+    projectName: projectDir,
+  }
+
+  const messages: SubAgentMessage[] = []
+  let prompt = ''
+  let model = ''
+  let totalInputTokens = 0
+  let totalOutputTokens = 0
+  const toolNames = new Set<string>()
+  let createdAt = ''
+  let completedAt = ''
+  let gitBranch: string | undefined
+
+  return new Promise((resolve, reject) => {
+    const stream = createReadStream(filePath, { encoding: 'utf-8' })
+    const rl = createInterface({ input: stream, crlfDelay: Infinity })
+
+    rl.on('line', (line) => {
+      try {
+        const entry = JSON.parse(line)
+        const timestamp = entry.timestamp || ''
+
+        if (timestamp) {
+          if (!createdAt) createdAt = timestamp
+          completedAt = timestamp
+        }
+
+        if (!gitBranch && entry.gitBranch) {
+          gitBranch = entry.gitBranch
+        }
+
+        if (entry.type === 'user') {
+          const contentBlocks = parseMessageContent(entry.message || {})
+          if (!prompt) {
+            const textBlock = contentBlocks.find(b => b.type === 'text')
+            if (textBlock?.text) prompt = textBlock.text.slice(0, 200)
+          }
+          messages.push({
+            role: 'user',
+            content: contentBlocks,
+            timestamp,
+          })
+        }
+
+        if (entry.type === 'assistant') {
+          const msg = entry.message || {}
+          if (!model && msg.model) model = msg.model
+
+          const usage = msg.usage
+          let inputTok = 0
+          let outputTok = 0
+          if (usage) {
+            inputTok = (usage.input_tokens || 0) +
+              (usage.cache_creation_input_tokens || 0) +
+              (usage.cache_read_input_tokens || 0)
+            outputTok = usage.output_tokens || 0
+            totalInputTokens += inputTok
+            totalOutputTokens += outputTok
+          }
+
+          const contentBlocks = parseMessageContent(msg)
+          for (const block of contentBlocks) {
+            if (block.type === 'tool_use' && block.name) {
+              toolNames.add(block.name)
+            }
+          }
+
+          messages.push({
+            role: 'assistant',
+            content: contentBlocks,
+            timestamp,
+            model: msg.model,
+            inputTokens: inputTok,
+            outputTokens: outputTok,
+          })
+        }
+      } catch {
+        // Skip malformed lines
+      }
+    })
+
+    rl.on('close', () => {
+      const duration = createdAt && completedAt
+        ? new Date(completedAt).getTime() - new Date(createdAt).getTime()
+        : 0
+
+      resolve({
+        agentId,
+        agentType: deriveAgentType(`agent-${agentId}`),
+        sessionId,
+        projectDir,
+        projectPath: projectInfo.projectPath,
+        projectName: projectInfo.projectName,
+        prompt,
+        model,
+        messageCount: messages.length,
+        totalInputTokens,
+        totalOutputTokens,
+        toolsUsed: Array.from(toolNames),
+        createdAt,
+        completedAt,
+        duration,
+        gitBranch,
+        messages,
+      })
+    })
+
+    rl.on('error', reject)
+    stream.on('error', reject)
+  })
 }

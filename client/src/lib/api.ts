@@ -157,6 +157,28 @@ export interface SubAgent {
   gitBranch?: string
 }
 
+export interface SubAgentContentBlock {
+  type: 'text' | 'tool_use' | 'tool_result'
+  text?: string
+  name?: string
+  input?: unknown
+  tool_use_id?: string
+  content?: string
+}
+
+export interface SubAgentMessage {
+  role: 'user' | 'assistant'
+  content: SubAgentContentBlock[]
+  timestamp: string
+  model?: string
+  inputTokens?: number
+  outputTokens?: number
+}
+
+export interface SubAgentDetail extends SubAgent {
+  messages: SubAgentMessage[]
+}
+
 export interface SearchResult {
   type: 'plan' | 'task' | 'todo' | 'memory'
   id: string
@@ -189,6 +211,8 @@ export const api = {
   },
   subagents: {
     list: () => fetchApi<SubAgent[]>('/subagents'),
+    get: (projectDir: string, sessionId: string, agentId: string) =>
+      fetchApi<SubAgentDetail>(`/subagents/${encodeURIComponent(projectDir)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(agentId)}`),
   },
   memory: {
     list: () => fetchApi<MemoryProject[]>('/memory'),

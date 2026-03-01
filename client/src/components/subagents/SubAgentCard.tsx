@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { Clock, Cpu, Wrench, GitBranch, MessageSquare } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -37,56 +38,60 @@ function formatTokens(count: number): string {
 }
 
 export function SubAgentCard({ agent }: SubAgentCardProps) {
+  const detailUrl = `/subagents/${encodeURIComponent(agent.projectDir)}/${encodeURIComponent(agent.sessionId)}/${encodeURIComponent(agent.agentId)}`
+
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-sm font-medium leading-snug line-clamp-2">
-            {agent.prompt || 'No prompt'}
-          </CardTitle>
-          {agent.model && (
-            <Badge variant="secondary" className="shrink-0 text-[10px]">
-              {formatModelName(agent.model)}
-            </Badge>
-          )}
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1" title="Input / Output tokens">
-            <Cpu className="h-3 w-3" />
-            {formatTokens(agent.totalInputTokens)} in / {formatTokens(agent.totalOutputTokens)} out
-          </span>
-
-          <span className="flex items-center gap-1" title="Duration">
-            <Clock className="h-3 w-3" />
-            {formatDuration(agent.duration)}
-          </span>
-
-          <span className="flex items-center gap-1" title="Messages">
-            <MessageSquare className="h-3 w-3" />
-            {agent.messageCount}
-          </span>
-
-          {agent.toolsUsed.length > 0 && (
-            <span className="flex items-center gap-1" title={agent.toolsUsed.join(', ')}>
-              <Wrench className="h-3 w-3" />
-              {agent.toolsUsed.length} tool{agent.toolsUsed.length !== 1 ? 's' : ''}
+    <Link to={detailUrl} className="block">
+      <Card className="transition-colors hover:bg-muted/50">
+        <CardHeader className="pb-2">
+          <div className="flex items-start justify-between gap-2">
+            <CardTitle className="text-sm font-medium leading-snug line-clamp-2">
+              {agent.prompt || 'No prompt'}
+            </CardTitle>
+            {agent.model && (
+              <Badge variant="secondary" className="shrink-0 text-[10px]">
+                {formatModelName(agent.model)}
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1" title="Input / Output tokens">
+              <Cpu className="h-3 w-3" />
+              {formatTokens(agent.totalInputTokens)} in / {formatTokens(agent.totalOutputTokens)} out
             </span>
-          )}
 
-          {agent.gitBranch && (
-            <span className="flex items-center gap-1" title="Git branch">
-              <GitBranch className="h-3 w-3" />
-              {agent.gitBranch}
+            <span className="flex items-center gap-1" title="Duration">
+              <Clock className="h-3 w-3" />
+              {formatDuration(agent.duration)}
             </span>
-          )}
-        </div>
 
-        <div className="mt-2 text-[11px] text-muted-foreground">
-          {formatDateTime(agent.createdAt)}
-        </div>
-      </CardContent>
-    </Card>
+            <span className="flex items-center gap-1" title="Messages">
+              <MessageSquare className="h-3 w-3" />
+              {agent.messageCount}
+            </span>
+
+            {agent.toolsUsed.length > 0 && (
+              <span className="flex items-center gap-1" title={agent.toolsUsed.join(', ')}>
+                <Wrench className="h-3 w-3" />
+                {agent.toolsUsed.length} tool{agent.toolsUsed.length !== 1 ? 's' : ''}
+              </span>
+            )}
+
+            {agent.gitBranch && (
+              <span className="flex items-center gap-1" title="Git branch">
+                <GitBranch className="h-3 w-3" />
+                {agent.gitBranch}
+              </span>
+            )}
+          </div>
+
+          <div className="mt-2 text-[11px] text-muted-foreground">
+            {formatDateTime(agent.createdAt)}
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   )
 }
