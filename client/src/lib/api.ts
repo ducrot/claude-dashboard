@@ -179,6 +179,34 @@ export interface SubAgentDetail extends SubAgent {
   messages: SubAgentMessage[]
 }
 
+export interface SessionMessage {
+  role: 'user' | 'assistant'
+  content: SubAgentContentBlock[]
+  timestamp: string
+  model?: string
+  inputTokens?: number
+  outputTokens?: number
+}
+
+export interface SessionDetail {
+  id: string
+  projectDir: string
+  projectPath: string
+  projectName: string
+  summary: string
+  firstPrompt?: string
+  createdAt: string
+  modified: string
+  gitBranch?: string
+  model: string
+  messageCount: number
+  totalInputTokens: number
+  totalOutputTokens: number
+  toolsUsed: string[]
+  duration: number
+  messages: SessionMessage[]
+}
+
 export interface SearchResult {
   type: 'plan' | 'task' | 'todo' | 'memory'
   id: string
@@ -204,6 +232,8 @@ export const api = {
   },
   sessions: {
     list: () => fetchApi<Session[]>('/sessions'),
+    get: (projectDir: string, sessionId: string) =>
+      fetchApi<SessionDetail>(`/sessions/${encodeURIComponent(projectDir)}/${encodeURIComponent(sessionId)}`),
   },
   projects: {
     list: () => fetchApi<ProjectSummary[]>('/projects'),

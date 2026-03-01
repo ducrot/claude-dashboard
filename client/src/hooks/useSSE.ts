@@ -32,7 +32,9 @@ export function useSSE(options: SSEOptions = {}) {
           queryClient.invalidateQueries({ queryKey: ['subagents'] })
         } else if (data.type === 'sessions') {
           queryClient.invalidateQueries({ queryKey: ['sessions'] })
+          queryClient.invalidateQueries({ queryKey: ['session'] })
           queryClient.invalidateQueries({ queryKey: ['projects'] })
+          queryClient.invalidateQueries({ queryKey: ['project'] })
         }
 
         onMessage?.(data)

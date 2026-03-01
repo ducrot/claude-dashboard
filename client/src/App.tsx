@@ -9,6 +9,7 @@ import Projects from '@/pages/Projects'
 import ProjectDetail from '@/pages/ProjectDetail'
 import SubAgents from '@/pages/SubAgents'
 import SubAgentDetail from '@/pages/SubAgentDetail'
+import SessionDetail from '@/pages/SessionDetail'
 import Memory from '@/pages/Memory'
 import MemoryDetail from '@/pages/MemoryDetail'
 
@@ -22,6 +23,7 @@ function App() {
           <Route path="plans/:filename" element={<PlanDetail />} />
           <Route path="projects" element={<Projects />} />
           <Route path="projects/:encodedName" element={<ProjectDetail />} />
+          <Route path="sessions/:projectDir/:sessionId" element={<SessionDetail />} />
           <Route path="tasks" element={<Tasks />} />
           <Route path="todos" element={<Todos />} />
           <Route path="subagents" element={<SubAgents />} />

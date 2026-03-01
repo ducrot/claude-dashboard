@@ -40,7 +40,8 @@ export function Sidebar() {
               {navigation.map((item) => {
                 const isActive = item.href === '/'
                   ? location.pathname === '/'
-                  : location.pathname.startsWith(item.href)
+                  : location.pathname.startsWith(item.href) ||
+                    (item.href === '/projects' && location.pathname.startsWith('/sessions'))
                 return (
                   <li key={item.name}>
                     <Link
