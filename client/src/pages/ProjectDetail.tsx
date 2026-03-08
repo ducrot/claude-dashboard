@@ -22,7 +22,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { TaskCard } from '@/components/tasks'
 import { TodoCard } from '@/components/todos'
-import { MemoryFileCard } from '@/components/memory'
+import { MemoryProjectCard } from '@/components/memory'
 import { SubAgentCard } from '@/components/subagents'
 
 type SessionView = 'timeline' | 'branch'
@@ -339,7 +339,7 @@ export default function ProjectDetail() {
           </TabsTrigger>
           <TabsTrigger value="memory">
             <Brain className="mr-1.5 h-3.5 w-3.5" />
-            Memory ({projectMemory?.files.length || 0})
+            Memory{projectMemory ? '' : ' (0)'}
           </TabsTrigger>
           <TabsTrigger value="subagents">
             <Bot className="mr-1.5 h-3.5 w-3.5" />
@@ -487,10 +487,8 @@ export default function ProjectDetail() {
         {/* Memory Tab */}
         <TabsContent value="memory" className="mt-4">
           {projectMemory && projectMemory.files.length > 0 ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {projectMemory.files.map((file) => (
-                <MemoryFileCard key={file.filename} file={file} />
-              ))}
+            <div className="max-w-md">
+              <MemoryProjectCard project={projectMemory} />
             </div>
           ) : (
             <p className="text-center text-sm text-muted-foreground py-8">

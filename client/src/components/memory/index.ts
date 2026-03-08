@@ -1,1 +1,1 @@
-export { MemoryFileCard } from './MemoryFileCard'
+export { MemoryProjectCard } from './MemoryProjectCard'
