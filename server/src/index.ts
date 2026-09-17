@@ -11,6 +11,11 @@ import projectsRouter from './routes/projects.js'
 import memoryRouter from './routes/memory.js'
 import subagentsRouter from './routes/subagents.js'
 import eventsRouter from './routes/events.js'
+import { UsageIndexer } from './services/usage/indexer.js'
+import { createUsageRouter } from './routes/usage.js'
+
+const usageIndexer = new UsageIndexer()
+usageIndexer.start()
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -24,6 +29,7 @@ app.use('/api/plans', plansRouter)
 app.use('/api/tasks', tasksRouter)
 app.use('/api/todos', todosRouter)
 app.use('/api/stats', statsRouter)
+app.use('/api/usage', createUsageRouter(usageIndexer))
 app.use('/api/sessions', sessionsRouter)
 app.use('/api/search', searchRouter)
 app.use('/api/projects', projectsRouter)

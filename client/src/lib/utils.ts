@@ -31,3 +31,19 @@ export function truncate(str: string, length: number): string {
   if (str.length <= length) return str
   return str.slice(0, length) + '...'
 }
+
+const compactCount = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
+export function formatCompactCount(value: number): string {
+  return compactCount.format(value)
+}
+
+export function formatPercent(part: number, whole: number): string {
+  return `${whole ? (part / whole * 100).toFixed(1) : '0.0'}%`
+}
+
+const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 })
+/** Sub-cent estimates would otherwise all render as $0.00. */
+const usdSubCent = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 5 })
+export function formatUsd(value: number): string {
+  return (value > 0 && value < 0.01 ? usdSubCent : usd).format(value)
+}

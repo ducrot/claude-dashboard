@@ -216,6 +216,7 @@ export interface SearchResult {
 }
 
 export const api = {
+  usage: (params: Record<string, string>) => fetchApi<UsageResponse>(`/usage?${new URLSearchParams(params)}`),
   plans: {
     list: () => fetchApi<PlanSummary[]>('/plans'),
     get: (filename: string) => fetchApi<Plan>(`/plans/${encodeURIComponent(filename)}`),
@@ -250,4 +251,35 @@ export const api = {
       fetchApi<MemoryFileDetail>(`/memory/${encodeURIComponent(projectDir)}/${encodeURIComponent(filename)}`),
   },
   search: (query: string) => fetchApi<SearchResult[]>(`/search?q=${encodeURIComponent(query)}`),
+}
+
+export interface UsageIndexStatus {
+  state: 'building' | 'ready' | 'error'
+  filesTotal: number; filesIndexed: number; pendingFiles: number
+  lastUpdatedAt: string | null; startedAt: string | null; skippedFiles: number
+}
+export interface UsageQuery {
+  range: string; from: string; to: string; groupBy: 'day' | 'week' | 'month'
+  project: string | null; family: string | null; model: string | null; agent: 'all' | 'main' | 'subagent'
+}
+export interface UsageCounts {
+  inputTokens: number; outputTokens: number; cacheReadTokens: number
+  cacheWrite5mTokens: number; cacheWrite1hTokens: number; thinkingTokens: number
+  webSearchRequests: number; webFetchRequests: number
+}
+export interface MetricValues { requests: number; outputTokens: number; totalTokens: number; costUsd: number | null }
+export interface UsageModelInfo { modelId: string; displayName: string; family: 'Opus' | 'Sonnet' | 'Haiku' | 'Fable' | 'Other' }
+export interface UsageModel extends UsageModelInfo, UsageCounts, MetricValues {
+  firstUsedAt: string; lastUsedAt: string; sessions: number; inputTokensIncludingCache: number
+}
+export interface UsageProjectOption { projectDir: string; projectPath: string; projectName: string }
+export interface UsageResponse {
+  index: UsageIndexStatus; query: UsageQuery; priceTable: { asOf: string; source: string }
+  data: null | {
+    totals: UsageCounts & { requests: number; totalTokens: number; inputTokensIncludingCache: number; sessions: number; models: number
+      subagent: { requests: number; outputTokens: number }; cost: { usd: number; unpricedRequests: number; unpricedModels: string[] } }
+    models: UsageModel[]
+    series: { bucket: string; byModel: Record<string, MetricValues> }[]
+    filterOptions: { projects: UsageProjectOption[]; models: UsageModelInfo[] }
+  }
 }

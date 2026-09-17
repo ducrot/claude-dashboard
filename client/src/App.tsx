@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { MainLayout } from '@/components/layout'
 import Dashboard from '@/pages/Dashboard'
+import Usage from '@/pages/Usage'
 import Plans from '@/pages/Plans'
 import PlanDetail from '@/pages/PlanDetail'
 import Tasks from '@/pages/Tasks'
@@ -19,6 +20,7 @@ function App() {
       <Routes>
         <Route path="/" element={<MainLayout />}>
           <Route index element={<Dashboard />} />
+          <Route path="usage" element={<Usage />} />
           <Route path="plans" element={<Plans />} />
           <Route path="plans/:filename" element={<PlanDetail />} />
           <Route path="projects" element={<Projects />} />
