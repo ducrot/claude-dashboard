@@ -14,6 +14,9 @@ npm run dev:client
 # Run server only (port 3001)
 npm run dev:server
 
+# Run server tests
+npm test
+
 # Build for production
 npm run build
 

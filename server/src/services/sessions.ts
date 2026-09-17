@@ -2,6 +2,7 @@ import { readFile, readdir, stat } from 'fs/promises'
 import { createReadStream } from 'fs'
 import { createInterface } from 'readline'
 import { join } from 'path'
+import { TranscriptUsageAccumulator } from './usage/transcript.js'
 import { paths } from '../config/paths.js'
 import { parseMessageContent, type ContentBlock } from './message-parser.js'
 
@@ -237,8 +238,7 @@ export async function getSessionDetail(
   const messages: SessionMessage[] = []
   let firstPrompt: string | undefined
   let model = ''
-  let totalInputTokens = 0
-  let totalOutputTokens = 0
+  const usage = new TranscriptUsageAccumulator()
   const toolNames = new Set<string>()
   let createdAt = ''
   let completedAt = ''
@@ -294,18 +294,6 @@ export async function getSessionDetail(
           const msg = entry.message || {}
           if (!model && msg.model) model = msg.model
 
-          const usage = msg.usage
-          let inputTok = 0
-          let outputTok = 0
-          if (usage) {
-            inputTok = (usage.input_tokens || 0) +
-              (usage.cache_creation_input_tokens || 0) +
-              (usage.cache_read_input_tokens || 0)
-            outputTok = usage.output_tokens || 0
-            totalInputTokens += inputTok
-            totalOutputTokens += outputTok
-          }
-
           const contentBlocks = parseMessageContent(msg)
           for (const block of contentBlocks) {
             if (block.type === 'tool_use' && block.name) {
@@ -313,14 +301,14 @@ export async function getSessionDetail(
             }
           }
 
-          messages.push({
+          const message: SessionMessage = {
             role: 'assistant',
             content: contentBlocks,
             timestamp,
             model: msg.model,
-            inputTokens: inputTok,
-            outputTokens: outputTok,
-          })
+          }
+          messages.push(message)
+          usage.add(entry, message)
         }
       } catch {
         // Skip malformed lines
@@ -328,6 +316,7 @@ export async function getSessionDetail(
     })
 
     rl.on('close', () => {
+      usage.applyTotals()
       const duration = createdAt && completedAt
         ? new Date(completedAt).getTime() - new Date(createdAt).getTime()
         : 0
@@ -344,8 +333,7 @@ export async function getSessionDetail(
         gitBranch,
         model,
         messageCount: messages.length,
-        totalInputTokens,
-        totalOutputTokens,
+        ...usage.totals(),
         toolsUsed: Array.from(toolNames),
         duration,
         messages,

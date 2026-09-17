@@ -2,6 +2,7 @@ import { createReadStream } from 'fs'
 import { readdir, readFile } from 'fs/promises'
 import { join, basename } from 'path'
 import { createInterface } from 'readline'
+import { TranscriptUsageAccumulator } from './usage/transcript.js'
 import { paths } from '../config/paths.js'
 import { parseMessageContent, type ContentBlock } from './message-parser.js'
 
@@ -112,8 +113,7 @@ async function parseAgentFile(filePath: string): Promise<{
     let prompt = ''
     let model = ''
     let messageCount = 0
-    let totalInputTokens = 0
-    let totalOutputTokens = 0
+    const usage = new TranscriptUsageAccumulator()
     const toolNames = new Set<string>()
     let createdAt = ''
     let completedAt = ''
@@ -151,13 +151,7 @@ async function parseAgentFile(filePath: string): Promise<{
             model = entry.message.model
           }
 
-          const usage = entry.message?.usage
-          if (usage) {
-            totalInputTokens += (usage.input_tokens || 0) +
-              (usage.cache_creation_input_tokens || 0) +
-              (usage.cache_read_input_tokens || 0)
-            totalOutputTokens += usage.output_tokens || 0
-          }
+          usage.add(entry)
 
           const content = entry.message?.content
           if (Array.isArray(content)) {
@@ -182,8 +176,7 @@ async function parseAgentFile(filePath: string): Promise<{
         prompt,
         model,
         messageCount,
-        totalInputTokens,
-        totalOutputTokens,
+        ...usage.totals(),
         toolsUsed: Array.from(toolNames),
         createdAt,
         completedAt,
@@ -287,8 +280,7 @@ export async function getSubAgent(
   const messages: SubAgentMessage[] = []
   let prompt = ''
   let model = ''
-  let totalInputTokens = 0
-  let totalOutputTokens = 0
+  const usage = new TranscriptUsageAccumulator()
   const toolNames = new Set<string>()
   let createdAt = ''
   let completedAt = ''
@@ -329,18 +321,6 @@ export async function getSubAgent(
           const msg = entry.message || {}
           if (!model && msg.model) model = msg.model
 
-          const usage = msg.usage
-          let inputTok = 0
-          let outputTok = 0
-          if (usage) {
-            inputTok = (usage.input_tokens || 0) +
-              (usage.cache_creation_input_tokens || 0) +
-              (usage.cache_read_input_tokens || 0)
-            outputTok = usage.output_tokens || 0
-            totalInputTokens += inputTok
-            totalOutputTokens += outputTok
-          }
-
           const contentBlocks = parseMessageContent(msg)
           for (const block of contentBlocks) {
             if (block.type === 'tool_use' && block.name) {
@@ -348,14 +328,14 @@ export async function getSubAgent(
             }
           }
 
-          messages.push({
+          const message: SubAgentMessage = {
             role: 'assistant',
             content: contentBlocks,
             timestamp,
             model: msg.model,
-            inputTokens: inputTok,
-            outputTokens: outputTok,
-          })
+          }
+          messages.push(message)
+          usage.add(entry, message)
         }
       } catch {
         // Skip malformed lines
@@ -363,6 +343,7 @@ export async function getSubAgent(
     })
 
     rl.on('close', () => {
+      usage.applyTotals()
       const duration = createdAt && completedAt
         ? new Date(completedAt).getTime() - new Date(createdAt).getTime()
         : 0
@@ -377,8 +358,7 @@ export async function getSubAgent(
         prompt,
         model,
         messageCount: messages.length,
-        totalInputTokens,
-        totalOutputTokens,
+        ...usage.totals(),
         toolsUsed: Array.from(toolNames),
         createdAt,
         completedAt,
