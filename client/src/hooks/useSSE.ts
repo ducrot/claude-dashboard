@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useCallback } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 interface SSEOptions {
@@ -9,7 +9,6 @@ interface SSEOptions {
 
 export function useSSE(options: SSEOptions = {}) {
   const { onMessage, onError, enabled = true } = options
-  const eventSourceRef = useRef<EventSource | null>(null)
   const queryClient = useQueryClient()
 
   const handleMessage = useCallback(
@@ -50,7 +49,6 @@ export function useSSE(options: SSEOptions = {}) {
     if (!enabled) return
 
     const eventSource = new EventSource('/api/events')
-    eventSourceRef.current = eventSource
 
     eventSource.onmessage = handleMessage
     eventSource.onerror = (e) => {
@@ -58,13 +56,18 @@ export function useSSE(options: SSEOptions = {}) {
       onError?.(e)
     }
 
+    // Page teardown aborts an open connection, which fires a spurious error
+    // event in the dying page; closing first keeps onerror for real failures.
+    // A bfcache freeze (persisted) must keep the stream, or a restored page
+    // would never reconnect because the effect does not re-run.
+    const handlePageHide = (event: PageTransitionEvent) => {
+      if (!event.persisted) eventSource.close()
+    }
+    window.addEventListener('pagehide', handlePageHide as EventListener)
+
     return () => {
+      window.removeEventListener('pagehide', handlePageHide as EventListener)
       eventSource.close()
-      eventSourceRef.current = null
     }
   }, [enabled, handleMessage, onError])
-
-  return {
-    isConnected: !!eventSourceRef.current,
-  }
 }

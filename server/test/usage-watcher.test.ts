@@ -5,7 +5,7 @@ import { expect, test, vi } from 'vitest'
 import { paths } from '../src/config/paths.js'
 import { fileWatcher } from '../src/services/watcher.js'
 import { UsageIndexer } from '../src/services/usage/indexer.js'
-import events from '../src/routes/events.js'
+import { createEventsRouter } from '../src/routes/events.js'
 import { invalidateSubAgentsCache } from '../src/services/subagents.js'
 import { tempCacheFile } from './setup.js'
 
@@ -24,7 +24,7 @@ test('real watcher add/change/unlink/unlinkDir delivers transcript notifications
   await new Promise<void>(resolve => (fileWatcher as any).watcher.once('ready', resolve))
   // Chokidar 3 emits ready before all overlapping glob scans have settled.
   await new Promise(resolve => setTimeout(resolve, 100))
-  const app = express().use('/api/events', events)
+  const app = express().use('/api/events', createEventsRouter(fileWatcher))
   const server = app.listen(0, '127.0.0.1')
   await new Promise<void>(resolve => server.on('listening', resolve))
   const { port } = server.address() as { port: number }

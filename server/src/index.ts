@@ -10,7 +10,7 @@ import searchRouter from './routes/search.js'
 import projectsRouter from './routes/projects.js'
 import memoryRouter from './routes/memory.js'
 import subagentsRouter from './routes/subagents.js'
-import eventsRouter from './routes/events.js'
+import { createEventsRouter } from './routes/events.js'
 import { UsageIndexer } from './services/usage/indexer.js'
 import { createUsageRouter } from './routes/usage.js'
 
@@ -37,7 +37,7 @@ app.use('/api/search', searchRouter)
 app.use('/api/projects', projectsRouter)
 app.use('/api/memory', memoryRouter)
 app.use('/api/subagents', subagentsRouter)
-app.use('/api/events', eventsRouter)
+app.use('/api/events', createEventsRouter(fileWatcher))
 
 // Health check
 app.get('/api/health', (_req, res) => {
