@@ -5,6 +5,8 @@ import type { Server } from 'node:http'
 import { afterEach, expect, test, vi } from 'vitest'
 import { paths } from '../src/config/paths.js'
 import { UsageIndexer } from '../src/services/usage/indexer.js'
+import { buckets, bucketCount, localDate, MAX_BUCKETS } from '../src/services/usage/ranges.js'
+import { MAX_SERIES_CELLS } from '../src/services/usage/query.js'
 import { createUsageRouter } from '../src/routes/usage.js'
 import sessions from '../src/routes/sessions.js'
 import { tempCacheFile } from './setup.js'
@@ -353,6 +355,76 @@ test('tools and effort follow date, project, family, overriding model and agent 
   expect(old.effort.byModel[0].byEffort.low.requests).toBe(1)
   const empty = (await get('project=missing')).data
   expect(empty.tools).toEqual([]); expect(empty.toolsByMcp).toEqual([]); expect(empty.effort.byModel).toEqual([])
+})
+
+const localFrom = (days: number) => {
+  const date = new Date(2026, 8, 17, 12)
+  date.setDate(date.getDate() - days)
+  return localDate(date)
+}
+
+test('the arithmetic bucket preflight matches generated buckets across DST and grouping changes', () => {
+  for (const [from, to, groupBy] of [
+    ['2026-03-27', '2026-04-03', 'day'], ['2026-10-30', '2027-03-29', 'day'], ['2026-09-17', '2026-09-17', 'day'],
+    ['2026-03-27', '2026-04-03', 'week'], ['2026-03-29', '2026-03-29', 'week'], ['2025-12-28', '2026-01-04', 'week'],
+    ['2026-02-27', '2026-03-30', 'month'], ['2026-01-31', '2026-03-01', 'month'], ['1877-01-01', '2026-09-17', 'month'],
+  ] as const) {
+    const query = { from, to, groupBy }
+    expect(bucketCount(query), `${from} ${to} ${groupBy}`).toBe(buckets(query).length)
+  }
+})
+
+test('oversized custom ranges return a clear 400 before allocating series buckets', async () => {
+  const { get } = await fixture({})
+  const at = await get(`range=custom&from=${localFrom(MAX_BUCKETS - 1)}&to=2026-09-17`)
+  expect(at.status).toBe(200)
+  expect(at.data.series).toHaveLength(MAX_BUCKETS)
+  const over = await get(`range=custom&from=${localFrom(MAX_BUCKETS)}&to=2026-09-17`)
+  expect(over).toMatchObject({ status: 400 })
+  expect(over.error).toContain(`maximum of ${MAX_BUCKETS}`)
+  expect(over.error).toContain('coarser grouping')
+  const wide = localFrom(3000)
+  expect(await get(`range=custom&from=${wide}&to=2026-09-17`)).toMatchObject({ status: 400 })
+  const week = await get(`range=custom&from=${wide}&to=2026-09-17&groupBy=week`)
+  expect(week.status).toBe(200)
+  expect(week.data.series).toHaveLength(bucketCount({ from: wide, to: '2026-09-17', groupBy: 'week' }))
+  const months = await get('range=custom&from=1877-01-01&to=2026-09-17&groupBy=month')
+  expect(months.status).toBe(200)
+  expect(months.data.series).toHaveLength(1797)
+  expect(months.data.series[0].bucket).toBe('1877-01')
+})
+
+test('oversized custom ranges are rejected consistently on the sessions endpoint', async () => {
+  const { get } = await fixture({ 'p/a.jsonl': [entry('one')] })
+  expect(await get(`range=custom&from=${localFrom(MAX_BUCKETS)}&to=2026-09-17&project=p`, '/api/usage/sessions'))
+    .toMatchObject({ status: 400, error: expect.stringContaining(`maximum of ${MAX_BUCKETS}`) })
+  expect(await get('project=p', '/api/usage/sessions')).toMatchObject({ status: 200 })
+})
+
+test('bucket-by-dimension series cells are bounded for high dimension counts', async () => {
+  const levels = (count: number) => Array.from({ length: count }, (_, i) => entry(`level-${i}`, {}, { effort: `level-${i}` }))
+  const at = await fixture({ 'p/a.jsonl': levels(49) })
+  // 1 model + 49 effort levels at the bucket cap is exactly the cell limit.
+  expect(await at.get(`range=custom&from=${localFrom(MAX_BUCKETS - 1)}&to=2026-09-17`)).toMatchObject({ status: 200 })
+  const high = await fixture({ 'p/a.jsonl': levels(50) })
+  const below = await high.get(`range=custom&from=${localFrom(1959)}&to=2026-09-17`)
+  expect(below.status).toBe(200)
+  expect(below.data.series).toHaveLength(1960)
+  const over = await high.get(`range=custom&from=${localFrom(MAX_BUCKETS - 1)}&to=2026-09-17`)
+  expect(over).toMatchObject({ status: 400 })
+  expect(over.error).toContain(`series cells`)
+  expect(over.error).toContain(`maximum of ${MAX_SERIES_CELLS}`)
+})
+
+test('a bulk change draining a huge pending set never spreads call arguments', async () => {
+  // The premise: this pending-set size exceeds the engine's argument limit for a spread call.
+  expect(() => Math.min(...Array(250_000).fill(1))).toThrow()
+  const indexer = new UsageIndexer({ cacheFile: tempCacheFile(), projectsDir: join(paths.projects, 'bulk-pending'), debounceMs: 0, throttleMs: 0 })
+  indexer.start(); await indexer.whenIdle()
+  expect(indexer.status().state).toBe('ready')
+  for (let i = 0; i < 250_000; i++) indexer.notifyChanged(`bulk-${i}/file-${i}.jsonl`)
+  await indexer.whenIdle()
+  expect(indexer.status()).toMatchObject({ state: 'ready', pendingFiles: 0 })
 })
 
 test('tool names use timestamp then path then offset provenance as attribution moves', async () => {

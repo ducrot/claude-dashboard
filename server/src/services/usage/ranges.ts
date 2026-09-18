@@ -1,4 +1,6 @@
 export type GroupBy = 'day' | 'week' | 'month'
+/** Bucket cap for planned series; the largest preset (a daily year) needs 366, so this only bites on custom windows. */
+export const MAX_BUCKETS = 2000
 export interface UsageQuery {
   range: string; from: string; to: string; groupBy: GroupBy
   project: string | null; family: string | null; model: string | null; agent: 'all' | 'main' | 'subagent'
@@ -32,7 +34,11 @@ export function resolveQuery(input: Record<string, unknown>, now: Date): UsageQu
   else if (range === 'custom') { from = parseDate(String(input.from ?? '')); to = parseDate(String(input.to ?? '')) }
   else throw new Error('Invalid range')
   if (from > to) throw new Error('from must be on or before to')
-  return { range, from: localDate(from), to: localDate(to), groupBy, agent, family, project: (input.project as string | undefined) ?? null, model: (input.model as string | undefined) ?? null }
+  const query: UsageQuery = { range, from: localDate(from), to: localDate(to), groupBy, agent, family, project: (input.project as string | undefined) ?? null, model: (input.model as string | undefined) ?? null }
+  // Bounded before any endpoint allocates series buckets; both range-contract endpoints share this check.
+  const planned = bucketCount(query)
+  if (planned > MAX_BUCKETS) throw new Error(`Range too large: ${planned} ${groupBy} buckets exceed the supported maximum of ${MAX_BUCKETS}. Choose a shorter range or a coarser grouping.`)
+  return query
 }
 export function parseLimit(input: unknown, fallback: number, max: number): number {
   if (input === undefined) return fallback
@@ -48,7 +54,16 @@ export function bucketKey(day: string, groupBy: GroupBy): string {
   date.setDate(date.getDate() - (date.getDay() + 6) % 7)
   return localDate(date)
 }
-export function buckets(query: UsageQuery): string[] {
+/** Exact count without building the list, so the preflight never allocates proportional to the window. */
+export function bucketCount(query: Pick<UsageQuery, 'from' | 'to' | 'groupBy'>): number {
+  const from = parseDate(query.from)
+  const to = parseDate(query.to)
+  if (query.groupBy === 'month') return (to.getFullYear() - from.getFullYear()) * 12 + (to.getMonth() - from.getMonth()) + 1
+  // Both anchors sit at local noon, so DST transitions only shift the difference by an hour and rounding stays exact.
+  const days = Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1
+  return query.groupBy === 'week' ? Math.floor((days - 1 + (from.getDay() + 6) % 7) / 7) + 1 : days
+}
+export function buckets(query: Pick<UsageQuery, 'from' | 'to' | 'groupBy'>): string[] {
   const result: string[] = []
   const date = parseDate(query.from)
   const end = parseDate(query.to)

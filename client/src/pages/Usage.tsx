@@ -15,7 +15,7 @@ export default function Usage() {
     <header><h1 className="text-3xl font-bold tracking-tight">Usage</h1><p className="text-muted-foreground">Model, token, tool and effort statistics from local transcripts</p></header>
     <UsageFilters filters={filters} response={response} />
     {isLoading && <p className="py-10 text-muted-foreground" role="status">Loading usage…</p>}
-    {error && <p className="rounded-lg border border-destructive/30 p-4 text-destructive" role="alert">Could not load usage. Check the selected dates and filters, and make sure the server is running.</p>}
+    {error && <p className="rounded-lg border border-destructive/30 p-4 text-destructive" role="alert">Could not load usage: {error.message.replace(/\s*\.?\s*$/, '')}. Check the selected dates and filters, and make sure the server is running.</p>}
     {response?.index.state === 'error' && <p role="alert" className="text-destructive">The usage index could not be built. Check the server log and restart the server.</p>}
     {response?.index.state === 'building' && <BuildingUsageIndex index={response.index} />}
     {response?.data && <>

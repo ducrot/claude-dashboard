@@ -106,7 +106,10 @@ export class UsageIndexer extends EventEmitter {
 
   private async drain(): Promise<void> {
     while (this.pending.size) {
-      const due = Math.min(...this.pending.values())
+      // Iterate instead of spreading: a bulk change (backup restore, mass delete) can push the pending
+      // set past the engine's argument limit, and the resulting RangeError would latch state: 'error'.
+      let due = Infinity
+      for (const at of this.pending.values()) if (at < due) due = at
       if (due > Date.now()) { await delay(due - Date.now()); continue }
       let changed = false
       for (const [file, at] of this.pending) {

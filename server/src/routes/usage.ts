@@ -1,9 +1,9 @@
 import { Router, type Response } from 'express'
 import type { UsageIndexer } from '../services/usage/indexer.js'
-import { queryUsage, queryUsageSessions } from '../services/usage/query.js'
+import { assertSeriesBounds, queryUsage, queryUsageSessions } from '../services/usage/query.js'
 import { parseLimit, resolveQuery } from '../services/usage/ranges.js'
 
-/** Only parsing runs inside the catch, so an unexpected query fault still surfaces instead of reading as a bad request. */
+/** Only parsing and validation run inside the catch, so an unexpected query fault still surfaces instead of reading as a bad request. */
 function parseOr400<T>(res: Response, read: () => T): T | null {
   try { return read() }
   catch (error) { res.status(400).json({ error: (error as Error).message }); return null }
@@ -12,7 +12,11 @@ function parseOr400<T>(res: Response, read: () => T): T | null {
 export function createUsageRouter(indexer: UsageIndexer): Router {
   const router = Router()
   router.get('/', (req, res) => {
-    const query = parseOr400(res, () => resolveQuery(req.query, indexer.clock()))
+    const query = parseOr400(res, () => {
+      const resolved = resolveQuery(req.query, indexer.clock())
+      assertSeriesBounds(indexer, resolved)
+      return resolved
+    })
     if (query) res.json(queryUsage(indexer, query))
   })
   router.get('/sessions', (req, res) => {

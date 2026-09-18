@@ -1,7 +1,25 @@
 import type { ProjectOption, ToolRow, UsageIndexer, UsageRow } from './indexer.js'
 import { COUNT_FIELDS, inputTokensIncludingCache, isMainTranscript } from './transcript.js'
 import { estimateCost, modelInfo, PRICE_TABLE_AS_OF, PRICE_TABLE_SOURCE } from './models.js'
-import { bucketKey, buckets, type UsageQuery } from './ranges.js'
+import { bucketCount, bucketKey, buckets, type UsageQuery } from './ranges.js'
+
+/** Cap on bucket × (models + effort levels) cells; at the measured ~170 bytes per cell this bounds the series allocation near 20 MB. */
+export const MAX_SERIES_CELLS = 100_000
+
+/** Counts the matching model and effort dimensions before any bucket is allocated, so it never allocates by window. */
+export function assertSeriesBounds(indexer: UsageIndexer, query: UsageQuery): void {
+  const bucketTotal = bucketCount(query)
+  const models = new Set<string>()
+  const efforts = new Set<string>()
+  for (const { row } of indexer.rows.values()) {
+    if (!matches(row, query)) continue
+    models.add(row.model)
+    efforts.add(row.effort)
+  }
+  const dimensions = models.size + efforts.size
+  const cells = bucketTotal * dimensions
+  if (cells > MAX_SERIES_CELLS) throw new Error(`Range too large for this index: ${bucketTotal} ${query.groupBy} buckets across ${dimensions} model and effort levels would fill ${cells} series cells, above the supported maximum of ${MAX_SERIES_CELLS}. Choose a shorter range or a coarser grouping.`)
+}
 
 export interface MetricValues { requests: number; outputTokens: number; totalTokens: number; costUsd: number | null }
 type Counts = Record<typeof COUNT_FIELDS[number], number>

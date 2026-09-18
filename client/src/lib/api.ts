@@ -3,7 +3,9 @@ const API_BASE = '/api'
 async function fetchApi<T>(endpoint: string): Promise<T> {
   const response = await fetch(`${API_BASE}${endpoint}`)
   if (!response.ok) {
-    throw new Error(`API error: ${response.status} ${response.statusText}`)
+    // A JSON error body carries the server's validation message; anything else falls back to the status line.
+    const body = await response.json().catch(() => null) as { error?: unknown } | null
+    throw new Error(typeof body?.error === 'string' ? body.error : `API error: ${response.status} ${response.statusText}`)
   }
   return response.json()
 }

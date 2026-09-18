@@ -17,6 +17,8 @@ Dashboard statistics come from the deduplicated local transcript usage index and
 ### Usage
 The **Usage** page (`/usage`) reads local session transcripts and counts each API response once across all files. Choose a date range, day/week/month grouping, project, model family, individual model or agent scope; filters and the chart metric stay in the URL. KPI cards, stacked model timelines, distribution bars and a model table show requests and token usage, with raw model IDs in tooltips. The Projects × Models table compares projects by the selected metric; expand a project to load its sessions and follow the available project and session detail links.
 
+Custom ranges are bounded for memory safety: a request may plan at most 2,000 day/week/month buckets and 100,000 model-plus-effort series cells. Larger windows return a validation error suggesting a shorter range or a coarser grouping; presets and in-bound custom windows are unaffected.
+
 Estimated cost is an **API list-price equivalent, not billed usage**. It uses the price table dated 2026-09-17, includes web search, and does not apply long-context surcharges. Unknown models and unsupported fast-mode prices show “No price”; the cost tooltip lists excluded models. Thinking tokens are already included in output tokens.
 
 The index persists to `server/.cache/usage-index.json` for fast restarts and checks changed files in the background. This cache can be deleted safely: a rebuild shows progress and produces the same figures. Statistics mirror the transcripts currently on disk: additions and changes refresh automatically, and usage of deleted or cleaned-up transcripts disappears. Session and sub-agent detail pages count the responses in their own transcript file once. The Usage page counts each response once across all transcripts and includes sub-agent usage in session drilldowns, so figures for resumed or forked sessions and for sessions with sub-agents can differ. Usage also depends on the selected dates and filters, whereas detail totals cover the entire file.
@@ -174,7 +176,7 @@ The application reads from the Claude Code local directory:
 | GET | `/api/plans/:filename` | Get specific plan |
 | GET | `/api/tasks` | List all tasks |
 | GET | `/api/todos` | List all todos |
-| GET | `/api/usage` | Deduplicated model and project usage, range/filter queries and index progress |
+| GET | `/api/usage` | Deduplicated model and project usage, range/filter queries and index progress; custom ranges are capped at 2,000 buckets and 100,000 series cells |
 | GET | `/api/usage/sessions` | Session usage for a required project, including sub-agents; same filters, optional limit (default 20, max 100) |
 | GET | `/api/stats` | Get statistics with chart data |
 | GET | `/api/stats/summary` | Get summary statistics |
