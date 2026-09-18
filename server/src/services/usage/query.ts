@@ -1,4 +1,4 @@
-import type { ProjectOption, UsageIndexer, UsageRow } from './indexer.js'
+import type { ProjectOption, ToolRow, UsageIndexer, UsageRow } from './indexer.js'
 import { COUNT_FIELDS, inputTokensIncludingCache, isMainTranscript } from './transcript.js'
 import { estimateCost, modelInfo, PRICE_TABLE_AS_OF, PRICE_TABLE_SOURCE } from './models.js'
 import { bucketKey, buckets, type UsageQuery } from './ranges.js'
@@ -17,8 +17,8 @@ function addMetrics(target: MetricValues, row: UsageRow, totalTokens: number, co
   target.requests += row.requests; target.outputTokens += row.outputTokens; target.totalTokens += totalTokens
   target.costUsd = target.costUsd === null || cost === null ? null : target.costUsd + cost
 }
-function addModelMetrics(byModel: Record<string, MetricValues>, row: UsageRow, totalTokens: number, cost: number | null) {
-  addMetrics(byModel[row.model] ?? (byModel[row.model] = emptyMetrics()), row, totalTokens, cost)
+function addKeyedMetrics(byKey: Record<string, MetricValues>, key: string, row: UsageRow, totalTokens: number, cost: number | null) {
+  addMetrics(byKey[key] ?? (byKey[key] = emptyMetrics()), row, totalTokens, cost)
 }
 function trackSpan(target: { firstAt: number; lastAt: number }, row: UsageRow) {
   target.firstAt = Math.min(target.firstAt, row.firstAt); target.lastAt = Math.max(target.lastAt, row.lastAt)
@@ -29,7 +29,14 @@ interface ProjectAccumulator extends ProjectOption, Counts, MetricValues {
 interface SessionAccumulator extends MetricValues {
   sessionId: string; firstAt: number; lastAt: number; models: Set<string>; subagentRequests: number; hasMainTranscript: boolean
 }
-function matches(row: UsageRow, query: UsageQuery): boolean {
+interface ToolAccumulator { name: string; mcpServer: string | null; count: number; sessions: Set<string> }
+function addToolRow(map: Map<string, ToolAccumulator>, key: string, name: string, mcpServer: string | null, row: ToolRow) {
+  let target = map.get(key)
+  if (!target) { target = { name, mcpServer, count: 0, sessions: new Set() }; map.set(key, target) }
+  target.count += row.count
+  if (row.sessionId) target.sessions.add(row.sessionId)
+}
+function matches(row: ToolRow | UsageRow, query: UsageQuery): boolean {
   return row.date >= query.from && row.date <= query.to
     && (!query.project || row.projectDir === query.project)
     // An explicit model overrides the family filter.
@@ -46,13 +53,25 @@ export function queryUsage(indexer: UsageIndexer, query: UsageQuery) {
   const allModels = new Set<string>()
   const projectRows = new Map<string, ProjectAccumulator>()
   const modelRows = new Map<string, ModelAccumulator>()
-  const seriesMap = new Map(buckets(query).map(bucket => [bucket, Object.create(null) as Record<string, MetricValues>]))
+  const bucketList = buckets(query)
+  const seriesMap = new Map(bucketList.map(bucket => [bucket, Object.create(null) as Record<string, MetricValues>]))
+  const effortSeries = new Map(bucketList.map(bucket => [bucket, Object.create(null) as Record<string, MetricValues>]))
+  const effortModels = new Map<string, Record<string, MetricValues>>()
+  // Every level seen anywhere must exist in every bucket, so the stacked series line up.
+  // Row order, because the backfill order below is observable as the JSON key order of each bucket.
+  const effortLevels = new Set<string>()
   for (const { row } of indexer.rows.values()) {
     allModels.add(row.model)
     if (!matches(row, query)) continue
     const cost = estimateCost(row.model, row.speed, row)
     const input = inputTokensIncludingCache(row)
     const total = input + row.outputTokens
+    const bucket = bucketKey(row.date, query.groupBy)
+    effortLevels.add(row.effort)
+    let byEffort = effortModels.get(row.model)
+    if (!byEffort) { byEffort = Object.create(null) as Record<string, MetricValues>; effortModels.set(row.model, byEffort) }
+    addKeyedMetrics(byEffort, row.effort, row, total, cost)
+    addKeyedMetrics(effortSeries.get(bucket)!, row.effort, row, total, cost)
     totals.requests += row.requests; totals.totalTokens += total; totals.inputTokensIncludingCache += input
     for (const field of COUNT_FIELDS) totals[field] += row[field]
     if (row.sessionId) sessions.add(row.sessionId)
@@ -78,8 +97,8 @@ export function queryUsage(indexer: UsageIndexer, query: UsageQuery) {
     }
     for (const field of TOKEN_FIELDS) project[field] += row[field]
     addMetrics(project, row, total, cost)
-    addModelMetrics(project.byModel, row, total, cost)
-    addModelMetrics(seriesMap.get(bucketKey(row.date, query.groupBy))!, row, total, cost)
+    addKeyedMetrics(project.byModel, row.model, row, total, cost)
+    addKeyedMetrics(seriesMap.get(bucket)!, row.model, row, total, cost)
   }
   // Resolved after the loop so only projects that survived filtering pay for the file scan.
   if (projectRows.size) for (const file of indexer.files.keys()) {
@@ -89,7 +108,11 @@ export function queryUsage(indexer: UsageIndexer, query: UsageQuery) {
   }
   for (const byModel of seriesMap.values()) for (const id of modelRows.keys()) byModel[id] ??= emptyMetrics()
   totals.sessions = sessions.size; totals.models = modelRows.size; totals.cost.unpricedModels = [...unpriced].sort()
+  for (const byEffort of effortSeries.values()) for (const level of effortLevels) byEffort[level] ??= emptyMetrics()
   return { ...envelope, data: { totals,
+    ...queryTools(indexer, query),
+    effort: { series: [...effortSeries].map(([bucket, byEffort]) => ({ bucket, byEffort })),
+      byModel: [...effortModels].map(([modelId, byEffort]) => ({ modelId, byEffort })) },
     models: [...modelRows.values()].sort((a, b) => b.outputTokens - a.outputTokens || a.modelId.localeCompare(b.modelId))
       .map(({ sessions: ids, firstAt, lastAt, ...model }) => ({ ...model, sessions: ids.size,
         firstUsedAt: new Date(firstAt).toISOString(), lastUsedAt: new Date(lastAt).toISOString() })),
@@ -120,4 +143,22 @@ export function queryUsageSessions(indexer: UsageIndexer, query: UsageQuery, lim
     .sort((a, b) => b.outputTokens - a.outputTokens || a.sessionId.localeCompare(b.sessionId)).slice(0, limit)
     .map(({ firstAt, lastAt, models, ...session }) => ({ ...session,
       firstAt: new Date(firstAt).toISOString(), lastAt: new Date(lastAt).toISOString(), models: [...models].sort() })) }
+}
+
+/** Keep session sets until grouping is complete; summing per-tool session counts overcounts. */
+function queryTools(indexer: UsageIndexer, query: UsageQuery) {
+  const tools = new Map<string, ToolAccumulator>()
+  const grouped = new Map<string, ToolAccumulator>()
+  for (const row of indexer.toolRows.values()) {
+    if (!matches(row, query)) continue
+    const parts = row.name.split('__')
+    const mcpServer = parts[0] === 'mcp' && parts.length >= 3 && parts[1] && parts[2] ? parts[1] : null
+    addToolRow(tools, row.name, row.name, mcpServer, row)
+    // Separate key namespaces, so a plain tool never merges with a server of the same name.
+    addToolRow(grouped, mcpServer ? `mcp:${mcpServer}` : `tool:${row.name}`, mcpServer ?? row.name, mcpServer, row)
+  }
+  const serialize = (map: Map<string, ToolAccumulator>) => [...map.values()]
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .map(({ sessions, ...row }) => ({ ...row, sessions: sessions.size }))
+  return { tools: serialize(tools), toolsByMcp: serialize(grouped) }
 }

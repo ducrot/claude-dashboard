@@ -283,11 +283,15 @@ export interface UsageSession extends MetricValues {
   sessionId: string; firstAt: string; lastAt: string; models: string[]; subagentRequests: number; hasMainTranscript: boolean
 }
 export interface UsageSessionsResponse { index: UsageIndexStatus; sessions: UsageSession[] }
+export interface UsageTool { name: string; mcpServer: string | null; count: number; sessions: number }
 export interface UsageResponse {
   index: UsageIndexStatus; query: UsageQuery; priceTable: { asOf: string; source: string }
   data: null | {
     totals: UsageCounts & { requests: number; totalTokens: number; inputTokensIncludingCache: number; sessions: number; models: number
       subagent: { requests: number; outputTokens: number }; cost: { usd: number; unpricedRequests: number; unpricedModels: string[] } }
+    tools: UsageTool[]
+    toolsByMcp: UsageTool[]
+    effort: { series: { bucket: string; byEffort: Record<string, MetricValues> }[]; byModel: { modelId: string; byEffort: Record<string, MetricValues> }[] }
     models: UsageModel[]
     projects: UsageProject[]
     series: { bucket: string; byModel: Record<string, MetricValues> }[]

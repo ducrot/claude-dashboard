@@ -16,14 +16,18 @@ export function formatMetric(value: number | null, metric: UsageMetric): string 
 }
 const palette = { Opus: ['#c86a39', '#e08b4b', '#b85233', '#d6a05b', '#b77943'], Sonnet: ['#397fb8', '#539bc1', '#37759a'], Haiku: ['#399078', '#67a48b'], Fable: ['#a763a3', '#c481b1'], Other: ['#748093', '#96a0ad'] }
 const versions: Record<UsageModelInfo['family'], string[]> = { Opus: ['claude-opus-4-5', 'claude-opus-4-6', 'claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-5'], Sonnet: ['claude-sonnet-4-5', 'claude-sonnet-4-6', 'claude-sonnet-5'], Haiku: ['claude-3-5-haiku', 'claude-haiku-4-5'], Fable: ['claude-fable-5', 'claude-fable-5-1'], Other: [] }
+/** Stable per-string number, so a value outside the catalogs keeps its color across renders. */
+export function hashString(value: string): number {
+  let hash = 0
+  for (const char of value) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
+  return hash
+}
 export function modelColor(model: UsageModelInfo): string {
   const normalized = model.modelId.replace(/-\d{8}$/, '')
   const colors = palette[model.family]
   const version = versions[model.family].indexOf(normalized)
   if (version >= 0) return colors[version]
-  let hash = 0
-  for (const char of normalized) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  return colors[hash % colors.length]
+  return colors[hashString(normalized) % colors.length]
 }
 export function UsageCharts({ data, metric, onMetric }: { data: NonNullable<UsageResponse['data']>; metric: UsageMetric; onMetric: (value: string) => void }) {
   // Numeric keys avoid treating dots in an unknown model id as nested Recharts paths.

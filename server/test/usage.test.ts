@@ -301,3 +301,66 @@ test('transcript link flags use indexed paths even when the main file has no usa
     expect.objectContaining({ sessionId: uuid, hasMainTranscript: false }),
   ]))
 })
+
+const tool = (id: string, name: string) => ({ type: 'tool_use', id, name, input: {} })
+test('tools dedupe streamed blocks and copies, group MCP session unions and replace contributions', async () => {
+  const search = 'mcp__claude_ai_Gmail__search_threads'
+  const read = 'mcp__claude_ai_Gmail__read_thread'
+  const { get } = await fixture({
+    'p/a.jsonl': [entry('stream', { output_tokens: 1 }), entry('stream', { output_tokens: 1 }, { message: { content: [tool('one', search)] } }), entry('stream', { output_tokens: 425 }, { message: { content: [tool('one', search)] } }), entry('second', {}, { message: { content: [tool('two', read), tool('three', 'Read')] } })],
+    'p/b.jsonl': [entry('stream', {}, { message: { content: [tool('one', 'Wrong')] } }), entry('other-session', {}, { sessionId: 'other', message: { content: [tool('four', search)] } })],
+  })
+  const { data } = await get()
+  expect(data.totals).toMatchObject({ requests: 3, outputTokens: 425 })
+  expect(data.tools).toEqual([
+    { name: search, mcpServer: 'claude_ai_Gmail', count: 2, sessions: 2 },
+    ...[{ name: read, mcpServer: 'claude_ai_Gmail', count: 1, sessions: 1 }, { name: 'Read', mcpServer: null, count: 1, sessions: 1 }].sort((a, b) => a.name.localeCompare(b.name)),
+  ])
+  expect(data.toolsByMcp).toEqual([{ name: 'claude_ai_Gmail', mcpServer: 'claude_ai_Gmail', count: 3, sessions: 2 }, { name: 'Read', mcpServer: null, count: 1, sessions: 1 }])
+})
+
+test('effort candidates retain independent provenance, fallback, unknown and arbitrary keys', async () => {
+  const { get } = await fixture({
+    'p/a.jsonl': [entry('ordered', {}, { timestamp: '2026-09-17T09:00:00Z' }), entry('ordered', { output_tokens: 425 }, { timestamp: '2026-09-17T11:00:00Z', effort: 'high' }), entry('tie', {}, { effort: 'high' }), entry('unknown'), entry('fallback', {}, { perTurnEffort: 'low' }), entry('raw', {}, { effort: '__proto__' }), entry('preferred', {}, { effort: 'max', perTurnEffort: 'low' }), entry('present', {}, { timestamp: '2026-09-17T09:00:00Z' }), entry('present', {}, { timestamp: null, effort: 'xhigh' })],
+    'p/b.jsonl': [entry('ordered', {}, { effort: 'medium' }), entry('tie', {}, { effort: 'medium' })],
+  })
+  const { data } = await get('range=custom&from=2026-09-16&to=2026-09-17')
+  const levels = data.effort.byModel[0].byEffort
+  for (const key of ['low', 'medium', 'high', 'xhigh', 'max', 'unknown', '__proto__']) expect(levels[key].requests, key).toBe(1)
+  expect(levels.medium).toMatchObject({ outputTokens: 425, totalTokens: 425, costUsd: 0.010625 })
+  expect(data.effort.series[0].byEffort.medium.requests).toBe(0)
+  expect(data.effort.series[1].byEffort).toEqual(levels)
+})
+
+test('tools and effort follow date, project, family, overriding model and agent filters', async () => {
+  const { get } = await fixture({
+    'p/main.jsonl': [entry('main', { output_tokens: 20 }, { effort: 'medium', message: { content: [tool('a', 'Read')] } })],
+    'q/agent-sub.jsonl': [entry('sub', { output_tokens: 10 }, { effort: 'high', message: { model: 'claude-sonnet-5', content: [tool('b', 'mcp__server__call')] } })],
+    'r/main.jsonl': [entry('old', {}, { timestamp: '2026-08-01T10:00:00Z', effort: 'low', message: { content: [tool('c', 'Bash')] } })],
+  })
+  for (const query of ['project=p', 'family=opus', 'family=sonnet&model=claude-opus-5', 'agent=main']) {
+    const { data } = await get(query)
+    expect(data.tools).toEqual([{ name: 'Read', mcpServer: null, count: 1, sessions: 1 }])
+    expect(data.toolsByMcp).toEqual(data.tools)
+    expect(data.effort.byModel).toEqual([{ modelId: 'claude-opus-5', byEffort: { medium: expect.objectContaining({ requests: 1, outputTokens: 20 }) } }])
+  }
+  const sub = (await get('agent=subagent')).data
+  expect(sub.toolsByMcp).toEqual([{ name: 'server', mcpServer: 'server', count: 1, sessions: 1 }])
+  expect(sub.effort.byModel[0].byEffort.high.requests).toBe(1)
+  const old = (await get('range=custom&from=2026-08-01&to=2026-08-01')).data
+  expect(old.tools[0].name).toBe('Bash')
+  expect(old.effort.byModel[0].byEffort.low.requests).toBe(1)
+  const empty = (await get('project=missing')).data
+  expect(empty.tools).toEqual([]); expect(empty.toolsByMcp).toEqual([]); expect(empty.effort.byModel).toEqual([])
+})
+
+test('tool names use timestamp then path then offset provenance as attribution moves', async () => {
+  const { get } = await fixture({
+    'a/main.jsonl': [entry('moving', {}, { effort: 'high', message: { content: [tool('id', 'Late')] } })],
+    'b/agent-copy.jsonl': [entry('moving', {}, { timestamp: '2026-09-16T10:00:00Z', effort: 'medium', message: { content: [tool('id', 'First'), tool('id', 'SameLine')] } }), entry('moving', {}, { timestamp: '2026-09-16T10:00:00Z', message: { content: [tool('id', 'LaterOffset')] } })],
+  })
+  expect((await get('project=a')).data.tools).toEqual([])
+  const { data } = await get('range=custom&from=2026-09-16&to=2026-09-16&agent=subagent')
+  expect(data.tools).toEqual([{ name: 'First', mcpServer: null, count: 1, sessions: 1 }])
+  expect(data.effort.byModel[0].byEffort).toEqual({ medium: expect.objectContaining({ requests: 1 }) })
+})

@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { useUsageFilters } from '@/hooks/useUsageFilters'
 import { formatNumber } from '@/lib/utils'
-import { BuildingUsageIndex, UsageFilters, UsageKpis, UsageCharts, UsageModelsTable, UsageProjectsTable } from '@/components/usage'
+import { BuildingUsageIndex, UsageFilters, UsageKpis, UsageCharts, UsageModelsTable, UsageProjectsTable, UsageTools, UsageEffort } from '@/components/usage'
 
 export default function Usage() {
   const filters = useUsageFilters()
@@ -24,6 +24,8 @@ export default function Usage() {
       <UsageCharts data={response.data} metric={filters.metric} onMetric={v => filters.set('metric', v)} />
       <UsageModelsTable models={response.data.models} metric={filters.metric} activeModel={filters.get('model')} onModel={v => filters.set('model', v)} />
       <UsageProjectsTable projects={response.data.projects} models={response.data.models} metric={filters.metric} serverParams={filters.serverParams} />
+      <UsageTools tools={response.data.tools} toolsByMcp={response.data.toolsByMcp} grouping={filters.mcp} onGrouping={v => filters.set('mcp', v)} />
+      <UsageEffort effort={response.data.effort} models={response.data.models} metric={filters.metric} />
     </>}
   </div>
 }

@@ -108,20 +108,22 @@ export class TranscriptUsageAccumulator {
   }
 }
 
-export const SCALAR_FIELDS = ['model', 'speed', 'sessionId', 'agentId', 'cwd', 'gitBranch', 'version', 'entrypoint'] as const
+export const SCALAR_FIELDS = ['model', 'effort', 'speed', 'sessionId', 'agentId', 'cwd', 'gitBranch', 'version', 'entrypoint'] as const
 export type ScalarField = typeof SCALAR_FIELDS[number]
 export interface ScalarCandidate { value: string; at: number; offset: number; file: string }
+export interface ToolCandidate { name: string; at: number; offset: number; file: string }
 export interface PartialRecord extends TranscriptUsage {
   id: string
   ts: number | null
   webSearchRequests: number
   webFetchRequests: number
   scalars: Partial<Record<ScalarField, ScalarCandidate>>
+  tools: Map<string, ToolCandidate>
   isSidechain: boolean
 }
 export const COUNT_FIELDS = [...USAGE_FIELDS, 'webSearchRequests', 'webFetchRequests'] as const
 
-export function compareCandidate(a: ScalarCandidate, b: ScalarCandidate): number {
+export function compareCandidate(a: Pick<ScalarCandidate, 'at' | 'file' | 'offset'>, b: Pick<ScalarCandidate, 'at' | 'file' | 'offset'>): number {
   return (a.at === b.at ? 0 : a.at < b.at ? -1 : 1) || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0) || a.offset - b.offset
 }
 
@@ -134,13 +136,20 @@ export function parsePartialLine(line: string, file: string, offset: number): Pa
     const time = typeof entry.timestamp === 'string' ? Date.parse(entry.timestamp) : NaN
     const at = Number.isFinite(time) ? time : Infinity
     const scalars: PartialRecord['scalars'] = {}
+    const effort = typeof entry.effort === 'string' && entry.effort.length ? entry.effort : entry.perTurnEffort
     for (const field of SCALAR_FIELDS) {
-      const value = field === 'model' ? entry.message.model : field === 'speed' ? entry.message.usage?.speed : entry[field]
+      const value = field === 'model' ? entry.message.model : field === 'effort' ? effort : field === 'speed' ? entry.message.usage?.speed : entry[field]
       if (typeof value === 'string' && value.length && !(field === 'model' && value === '<synthetic>')) {
         scalars[field] = { value, at, offset, file }
       }
     }
-    return { id: parsed.id, ...parsed.usage, ts: Number.isFinite(at) ? at : null, scalars,
+    const tools = new Map<string, ToolCandidate>()
+    for (const block of Array.isArray(entry.message.content) ? entry.message.content : []) {
+      if (block?.type === 'tool_use' && typeof block.id === 'string' && block.id.length && typeof block.name === 'string' && block.name.length && !tools.has(block.id)) {
+        tools.set(block.id, { name: block.name, at, offset, file })
+      }
+    }
+    return { id: parsed.id, ...parsed.usage, tools, ts: Number.isFinite(at) ? at : null, scalars,
       webSearchRequests: tokens(entry.message.usage?.server_tool_use?.web_search_requests),
       webFetchRequests: tokens(entry.message.usage?.server_tool_use?.web_fetch_requests), isSidechain: entry.isSidechain === true }
   } catch { /* Ignore malformed transcript lines. */ }
@@ -148,13 +157,17 @@ export function parsePartialLine(line: string, file: string, offset: number): Pa
 
 /** Preserves each candidate's original file through intermediate merges. */
 export function mergePartials(a: PartialRecord, b: PartialRecord): PartialRecord {
-  const result = { ...a, scalars: { ...a.scalars }, isSidechain: a.isSidechain || b.isSidechain }
+  const result = { ...a, scalars: { ...a.scalars }, tools: new Map(a.tools), isSidechain: a.isSidechain || b.isSidechain }
   for (const field of COUNT_FIELDS) result[field] = Math.max(a[field], b[field])
   const ts = Math.min(a.ts ?? Infinity, b.ts ?? Infinity)
   result.ts = Number.isFinite(ts) ? ts : null
   for (const field of SCALAR_FIELDS) {
     const candidate = b.scalars[field]
     if (candidate && (!result.scalars[field] || compareCandidate(candidate, result.scalars[field]!) < 0)) result.scalars[field] = candidate
+  }
+  for (const [id, candidate] of b.tools) {
+    const previous = result.tools.get(id)
+    if (!previous || compareCandidate(candidate, previous) < 0) result.tools.set(id, candidate)
   }
   return result
 }

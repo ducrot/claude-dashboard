@@ -2,7 +2,7 @@ import { useSearchParams } from 'react-router-dom'
 
 export const METRICS = ['output', 'requests', 'total', 'cost'] as const
 export type UsageMetric = typeof METRICS[number]
-const defaults: Record<string, string> = { range: '30d', groupBy: 'day', agent: 'all', metric: 'output' }
+const defaults: Record<string, string> = { range: '30d', groupBy: 'day', agent: 'all', metric: 'output', mcp: 'tool' }
 const serverKeys = ['range', 'from', 'to', 'groupBy', 'project', 'family', 'model', 'agent'] as const
 export function useUsageFilters() {
   const [params, setParams] = useSearchParams()
@@ -27,5 +27,5 @@ export function useUsageFilters() {
       return next
     })
   }
-  return { get, set, serverParams, metric }
+  return { get, set, serverParams, metric, mcp: get('mcp') === 'server' ? 'server' as const : 'tool' as const }
 }

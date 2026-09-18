@@ -12,10 +12,11 @@ export interface IndexStatus {
   lastUpdatedAt: string | null; startedAt: string | null; skippedFiles: number
 }
 export interface UsageRow extends TranscriptUsage {
-  date: string; model: string; projectDir: string; sessionId: string; agentType: 'main' | 'subagent'; speed: string
+  date: string; model: string; projectDir: string; sessionId: string; agentType: 'main' | 'subagent'; speed: string; effort: string
   requests: number; webSearchRequests: number; webFetchRequests: number; firstAt: number; lastAt: number
 }
-interface Contribution { key: string; row: UsageRow }
+export interface ToolRow extends Pick<UsageRow, 'date' | 'model' | 'projectDir' | 'sessionId' | 'agentType'> { name: string; count: number }
+interface Contribution { key: string; row: UsageRow; tools: Map<string, ToolRow> }
 /** A bucket row with the response times behind it, so a removal can restore firstAt/lastAt. */
 export interface RowBucket { row: UsageRow; times: Map<string, number> }
 export interface ProjectOption { projectDir: string; projectPath: string; projectName: string }
@@ -32,6 +33,7 @@ export class UsageIndexer {
   readonly files = new Map<string, Map<string, PartialRecord>>()
   readonly responseFiles = new Map<string, Set<string>>()
   readonly rows = new Map<string, RowBucket>()
+  readonly toolRows = new Map<string, ToolRow>()
   readonly projectOptions = new Map<string, ProjectOption>()
   private readonly contributions = new Map<string, Contribution>()
   private idle: Promise<void> = Promise.resolve()
@@ -141,6 +143,7 @@ export class UsageIndexer {
         row.firstAt = Infinity; row.lastAt = -Infinity
         for (const time of times.values()) { row.firstAt = Math.min(row.firstAt, time); row.lastAt = Math.max(row.lastAt, time) }
       }
+      for (const [key, tool] of previous.tools) this.addToolCount(key, tool, -tool.count)
       this.contributions.delete(id)
     }
     let effective: PartialRecord | undefined
@@ -154,13 +157,21 @@ export class UsageIndexer {
     const tuple = classifyPath(attribution.file, attribution.partial)
     const row: UsageRow = {
       ...tuple, date: localDate(new Date(effective.ts)), model: effective.scalars.model.value,
-      speed: effective.scalars.speed?.value ?? '', requests: 1, firstAt: effective.ts, lastAt: effective.ts,
+      effort: effective.scalars.effort?.value ?? 'unknown', speed: effective.scalars.speed?.value ?? '', requests: 1, firstAt: effective.ts, lastAt: effective.ts,
       inputTokens: effective.inputTokens, outputTokens: effective.outputTokens, cacheReadTokens: effective.cacheReadTokens,
       cacheWrite5mTokens: effective.cacheWrite5mTokens, cacheWrite1hTokens: effective.cacheWrite1hTokens,
       thinkingTokens: effective.thinkingTokens, webSearchRequests: effective.webSearchRequests, webFetchRequests: effective.webFetchRequests,
     }
-    const key = JSON.stringify([row.date, row.model, row.projectDir, row.sessionId, row.agentType, row.speed])
-    this.contributions.set(id, { key, row })
+    const key = JSON.stringify([row.date, row.model, row.projectDir, row.sessionId, row.agentType, row.effort, row.speed])
+    const tools = new Map<string, ToolRow>()
+    for (const { name } of effective.tools.values()) {
+      const toolKey = JSON.stringify([row.date, row.model, row.projectDir, row.sessionId, row.agentType, name])
+      const tool = tools.get(toolKey)
+      if (tool) tool.count++
+      else tools.set(toolKey, { ...tuple, date: row.date, model: row.model, name, count: 1 })
+    }
+    for (const [toolKey, tool] of tools) this.addToolCount(toolKey, tool, tool.count)
+    this.contributions.set(id, { key, row, tools })
     const bucket = this.rows.get(key)
     if (!bucket) this.rows.set(key, { row: { ...row }, times: new Map([[id, effective.ts]]) })
     else {
@@ -170,6 +181,13 @@ export class UsageIndexer {
       bucket.row.lastAt = Math.max(bucket.row.lastAt, row.lastAt)
       bucket.times.set(id, effective.ts)
     }
+  }
+
+  /** Tool rows share the usage rows' add/subtract path; a bucket that reaches zero disappears. */
+  private addToolCount(key: string, tool: ToolRow, delta: number): void {
+    const bucket = this.toolRows.get(key)
+    if (!bucket) this.toolRows.set(key, { ...tool, count: delta })
+    else if (!(bucket.count += delta)) this.toolRows.delete(key)
   }
 
   private async buildProjectOptions(): Promise<void> {
