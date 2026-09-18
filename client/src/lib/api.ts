@@ -216,7 +216,10 @@ export interface SearchResult {
 }
 
 export const api = {
-  usage: (params: Record<string, string>) => fetchApi<UsageResponse>(`/usage?${new URLSearchParams(params)}`),
+  usage: {
+    get: (params: Record<string, string>) => fetchApi<UsageResponse>(`/usage?${new URLSearchParams(params)}`),
+    sessions: (params: Record<string, string>) => fetchApi<UsageSessionsResponse>(`/usage/sessions?${new URLSearchParams(params)}`),
+  },
   plans: {
     list: () => fetchApi<PlanSummary[]>('/plans'),
     get: (filename: string) => fetchApi<Plan>(`/plans/${encodeURIComponent(filename)}`),
@@ -273,12 +276,20 @@ export interface UsageModel extends UsageModelInfo, UsageCounts, MetricValues {
   firstUsedAt: string; lastUsedAt: string; sessions: number; inputTokensIncludingCache: number
 }
 export interface UsageProjectOption { projectDir: string; projectPath: string; projectName: string }
+export interface UsageProject extends UsageProjectOption, UsageCounts, MetricValues {
+  byModel: Record<string, MetricValues>; hasSessions: boolean
+}
+export interface UsageSession extends MetricValues {
+  sessionId: string; firstAt: string; lastAt: string; models: string[]; subagentRequests: number; hasMainTranscript: boolean
+}
+export interface UsageSessionsResponse { index: UsageIndexStatus; sessions: UsageSession[] }
 export interface UsageResponse {
   index: UsageIndexStatus; query: UsageQuery; priceTable: { asOf: string; source: string }
   data: null | {
     totals: UsageCounts & { requests: number; totalTokens: number; inputTokensIncludingCache: number; sessions: number; models: number
       subagent: { requests: number; outputTokens: number }; cost: { usd: number; unpricedRequests: number; unpricedModels: string[] } }
     models: UsageModel[]
+    projects: UsageProject[]
     series: { bucket: string; byModel: Record<string, MetricValues> }[]
     filterOptions: { projects: UsageProjectOption[]; models: UsageModelInfo[] }
   }

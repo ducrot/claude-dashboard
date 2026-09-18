@@ -215,3 +215,89 @@ test('first and last use and bucket edges use effective response times inside th
   expect(result.data.models[0]).toMatchObject({ requests: 2, firstUsedAt: '2026-09-17T09:00:00.000Z', lastUsedAt: '2026-09-17T11:00:00.000Z' })
   expect(result.data.series[0]).toMatchObject({ bucket: '2026-09-14', byModel: { 'claude-opus-5': { requests: 2 } } })
 })
+
+test('project matrix totals, model cells and transcript link flags honour every usage filter', async () => {
+  const uuid = '11111111-1111-1111-1111-111111111111'
+  const { get } = await fixture({
+    [`p/${uuid}.jsonl`]: [entry('main', { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 30, cache_creation: { ephemeral_5m_input_tokens: 40, ephemeral_1h_input_tokens: 50 }, output_tokens_details: { thinking_tokens: 5 } }, { sessionId: uuid, cwd: '/work/p' })],
+    [`p/${uuid}/subagents/agent-a.jsonl`]: [entry('sub', { output_tokens: 7 }, { sessionId: uuid, message: { model: 'claude-sonnet-5' } })],
+    'q/agent-only.jsonl': [entry('unknown', { output_tokens: 3 }, { message: { model: '__proto__' } })],
+    'q/sessions-index.json': [JSON.stringify({ originalPath: '/preferred/q' })],
+    'r/non-session.jsonl': [entry('old', { output_tokens: 999 }, { timestamp: '2026-08-01T10:00:00Z' })],
+  })
+  const result = await get()
+  expect(result.data.projects).toHaveLength(2)
+  const p = result.data.projects.find((row: any) => row.projectDir === 'p')
+  expect(p).toMatchObject({ projectName: 'p', projectPath: '/work/p', hasSessions: true, requests: 2, inputTokens: 10, outputTokens: 27, totalTokens: 157, cacheReadTokens: 30, cacheWrite5mTokens: 40, cacheWrite1hTokens: 50, thinkingTokens: 5,
+    byModel: { 'claude-opus-5': { requests: 1, outputTokens: 20, totalTokens: 150 }, 'claude-sonnet-5': { requests: 1, outputTokens: 7, totalTokens: 7 } } })
+  expect(p.costUsd).toBeCloseTo(p.byModel['claude-opus-5'].costUsd + p.byModel['claude-sonnet-5'].costUsd)
+  expect(result.data.projects.find((row: any) => row.projectDir === 'q')).toMatchObject({ projectPath: '/preferred/q', hasSessions: false, costUsd: null, byModel: { ['__proto__']: { requests: 1, costUsd: null } } })
+  for (const [query, project, requests, output] of [
+    ['project=p', 'p', 2, 27], ['family=sonnet', 'p', 1, 7], ['family=sonnet&model=claude-opus-5', 'p', 1, 20],
+    ['agent=main', 'p', 1, 20], ['project=p&agent=subagent', 'p', 1, 7],
+    ['range=custom&from=2026-08-01&to=2026-08-01', 'r', 1, 999],
+  ]) expect((await get(query as string)).data.projects).toEqual([expect.objectContaining({ projectDir: project, requests, outputTokens: output })])
+  expect((await get('project=missing')).data.projects).toEqual([])
+})
+
+test('session drilldown combines main and subagents, exposes metrics, sorts and uses current filters', async () => {
+  const uuid = '11111111-1111-1111-1111-111111111111'
+  const { get } = await fixture({
+    [`p/${uuid}.jsonl`]: [entry('main', { input_tokens: 10, output_tokens: 20 }, { sessionId: uuid })],
+    [`p/${uuid}/subagents/agent-a.jsonl`]: [entry('sub', { output_tokens: 30 }, { sessionId: undefined, timestamp: '2026-09-17T11:00:00Z', message: { model: 'claude-sonnet-5' } })],
+    'p/agent-orphan.jsonl': [entry('orphan', { output_tokens: 70 }, { sessionId: 'orphan', message: { model: 'unknown' } })],
+    'q/main.jsonl': [entry('other-project', { output_tokens: 999 })],
+  })
+  const sessions = async (query = '') => (await get(`project=p&${query}`, '/api/usage/sessions')).sessions
+  const rows = await sessions()
+  expect(rows).toHaveLength(2)
+  expect(rows[0]).toMatchObject({ sessionId: 'orphan', hasMainTranscript: false, costUsd: null })
+  expect(rows[1]).toEqual({ sessionId: uuid, firstAt: '2026-09-17T10:00:00.000Z', lastAt: '2026-09-17T11:00:00.000Z', models: ['claude-opus-5', 'claude-sonnet-5'], requests: 2, subagentRequests: 1, outputTokens: 50, totalTokens: 60, costUsd: expect.any(Number), hasMainTranscript: true })
+  expect(rows[1].costUsd).toBeCloseTo(0.001)
+  expect(await sessions('agent=main')).toEqual([expect.objectContaining({ sessionId: uuid, requests: 1, subagentRequests: 0, outputTokens: 20 })])
+  expect(await sessions('family=sonnet')).toEqual([expect.objectContaining({ requests: 1, outputTokens: 30 })])
+  expect(await sessions('family=sonnet&model=claude-opus-5')).toEqual([expect.objectContaining({ requests: 1, outputTokens: 20 })])
+  expect(await sessions('range=custom&from=2026-09-16&to=2026-09-16')).toEqual([])
+  expect(await sessions('limit=1')).toEqual([rows[0]])
+  expect((await get('project=missing', '/api/usage/sessions')).sessions).toEqual([])
+})
+
+test('session attribution uses earliest response time and then path, independent of later effort', async () => {
+  const { get } = await fixture({
+    'p/a.jsonl': [entry('effort', {}, { sessionId: 'a', timestamp: '2026-09-17T10:00:00Z' }), entry('effort', { output_tokens: 30 }, { sessionId: 'a', timestamp: '2026-09-17T12:00:00Z', effort: 'high' }), entry('tie', {}, { sessionId: 'a' })],
+    'p/b.jsonl': [entry('effort', {}, { sessionId: 'b', timestamp: '2026-09-17T11:00:00Z', effort: 'medium' }), entry('tie', {}, { sessionId: 'b' }), entry('earlier', {}, { sessionId: 'b', timestamp: '2026-09-17T11:00:00Z' })],
+    'p/c.jsonl': [entry('earlier', {}, { sessionId: 'c', timestamp: '2026-09-17T09:00:00Z' })],
+  })
+  expect((await get('project=p', '/api/usage/sessions')).sessions).toEqual([
+    expect.objectContaining({ sessionId: 'a', requests: 2, outputTokens: 30 }),
+    expect.objectContaining({ sessionId: 'c', requests: 1 }),
+  ])
+})
+
+test('sessions validate required project, shared filters and bounded integer limit; report building status', async () => {
+  const { get, indexer } = await fixture({ 'p/a.jsonl': Array.from({ length: 105 }, (_, i) => entry(`id-${i}`, { output_tokens: i }, { sessionId: `session-${i}` })) }, false)
+  expect(await get('project=p', '/api/usage/sessions')).toMatchObject({ status: 200, index: { state: 'building' }, sessions: [] })
+  indexer.start(); await indexer.whenIdle()
+  expect((await get('project=p', '/api/usage/sessions')).sessions).toHaveLength(20)
+  expect((await get('project=p&limit=100', '/api/usage/sessions')).sessions).toHaveLength(100)
+  for (const query of ['', 'project=', 'project=p&project=q', ...['0', '-1', '101', '1.5', 'abc', '', '1&limit=2'].map(limit => `project=p&limit=${limit}`), ...['range=bad', 'agent=bad', 'family=bad', 'groupBy=bad', 'model=a&model=b', 'range=custom', 'range=custom&from=2026-09-18&to=2026-09-17'].map(q => `project=p&${q}`)]) {
+    expect(await get(query, '/api/usage/sessions'), query).toMatchObject({ status: 400, error: expect.any(String) })
+  }
+})
+
+test('transcript link flags use indexed paths even when the main file has no usable responses', async () => {
+  const uuid = '11111111-1111-1111-1111-111111111111'
+  const { get } = await fixture({
+    [`p/${uuid}.jsonl`]: [],
+    [`p/${uuid}/subagents/agent-a.jsonl`]: [entry('nested', {}, { sessionId: uuid })],
+    'q/main.jsonl': [entry('non-uuid', {}, { sessionId: 'main' })],
+    [`q/${uuid}/subagents/agent-a.jsonl`]: [entry('no-main', {}, { sessionId: uuid })],
+  })
+  expect((await get('project=p&agent=subagent')).data.projects[0].hasSessions).toBe(true)
+  expect((await get('project=q')).data.projects[0].hasSessions).toBe(false)
+  expect((await get('project=p', '/api/usage/sessions')).sessions[0].hasMainTranscript).toBe(true)
+  expect((await get('project=q', '/api/usage/sessions')).sessions).toEqual(expect.arrayContaining([
+    expect.objectContaining({ sessionId: 'main', hasMainTranscript: true }),
+    expect.objectContaining({ sessionId: uuid, hasMainTranscript: false }),
+  ]))
+})

@@ -13,11 +13,11 @@ A web application for tracking and visualizing local Claude Code activity. Monit
 - **Hourly Activity Chart** - Session distribution by hour to identify usage patterns
 
 ### Usage
-The **Usage** page (`/usage`) reads local session transcripts and counts each API response once across all files. Choose a date range, day/week/month grouping, project, model family, individual model or agent scope; filters and the chart metric stay in the URL. KPI cards, stacked model timelines, distribution bars and a model table show requests and token usage, with raw model IDs in tooltips.
+The **Usage** page (`/usage`) reads local session transcripts and counts each API response once across all files. Choose a date range, day/week/month grouping, project, model family, individual model or agent scope; filters and the chart metric stay in the URL. KPI cards, stacked model timelines, distribution bars and a model table show requests and token usage, with raw model IDs in tooltips. The Projects × Models table compares projects by the selected metric; expand a project to load its sessions and follow the available project and session detail links.
 
 Estimated cost is an **API list-price equivalent, not billed usage**. It uses the price table dated 2026-09-17, includes web search, and does not apply long-context surcharges. Unknown models and unsupported fast-mode prices show “No price”; the cost tooltip lists excluded models. Thinking tokens are already included in output tokens.
 
-The in-memory index scans transcripts at server startup and shows progress while building. Restart the server to reflect subsequent transcript additions, changes or deletions. Session and sub-agent detail pages count each response once within their own transcript; copied history in resumed or forked sessions is counted on each detail page, while Usage counts it once globally and attributes it to one session. Usage also depends on the selected dates and filters, whereas detail totals cover the entire file.
+The in-memory index scans transcripts at server startup and shows progress while building. Restart the server to reflect subsequent transcript additions, changes or deletions. Session and sub-agent detail pages count the responses in their own transcript file once. The Usage page counts each response once across all transcripts and includes sub-agent usage in session drilldowns, so figures for resumed or forked sessions and for sessions with sub-agents can differ. Usage also depends on the selected dates and filters, whereas detail totals cover the entire file.
 
 ### Plans Management
 - **Browse & Search** - Filter through all implementation plans with instant search
@@ -170,7 +170,8 @@ The application reads from the Claude Code local directory:
 | GET | `/api/plans/:filename` | Get specific plan |
 | GET | `/api/tasks` | List all tasks |
 | GET | `/api/todos` | List all todos |
-| GET | `/api/usage` | Deduplicated model usage, range/filter queries and index progress |
+| GET | `/api/usage` | Deduplicated model and project usage, range/filter queries and index progress |
+| GET | `/api/usage/sessions` | Session usage for a required project, including sub-agents; same filters, optional limit (default 20, max 100) |
 | GET | `/api/stats` | Get statistics with chart data |
 | GET | `/api/stats/summary` | Get summary statistics |
 | GET | `/api/sessions` | List all sessions |

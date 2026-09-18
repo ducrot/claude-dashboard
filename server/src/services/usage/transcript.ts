@@ -159,10 +159,16 @@ export function mergePartials(a: PartialRecord, b: PartialRecord): PartialRecord
   return result
 }
 
+const SESSION_ID = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i
+/** A top-level `<projectDir>/<sessionId>.jsonl` transcript, the only shape a project detail page can list. */
+export function isMainTranscript(file: string): boolean {
+  const slash = file.indexOf('/')
+  return slash > 0 && file.endsWith('.jsonl') && SESSION_ID.test(file.slice(slash + 1, -'.jsonl'.length))
+}
 export function classifyPath(file: string, partial: PartialRecord) {
   const segments = file.split('/')
   const basename = segments.at(-1) ?? ''
-  const sessionId = segments.map(s => s.replace(/\.jsonl$/, '')).find(s => /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(s)) ?? ''
+  const sessionId = segments.map(s => s.replace(/\.jsonl$/, '')).find(s => SESSION_ID.test(s)) ?? ''
   return { projectDir: segments[0], sessionId: partial.scalars.sessionId?.value ?? sessionId,
     agentType: segments.includes('subagents') || basename.startsWith('agent-') || partial.isSidechain ? 'subagent' as const : 'main' as const }
 }

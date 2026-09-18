@@ -1,5 +1,5 @@
-import type { UsageIndexer, UsageRow } from './indexer.js'
-import { COUNT_FIELDS, inputTokensIncludingCache } from './transcript.js'
+import type { ProjectOption, UsageIndexer, UsageRow } from './indexer.js'
+import { COUNT_FIELDS, inputTokensIncludingCache, isMainTranscript } from './transcript.js'
 import { estimateCost, modelInfo, PRICE_TABLE_AS_OF, PRICE_TABLE_SOURCE } from './models.js'
 import { bucketKey, buckets, type UsageQuery } from './ranges.js'
 
@@ -17,6 +17,25 @@ function addMetrics(target: MetricValues, row: UsageRow, totalTokens: number, co
   target.requests += row.requests; target.outputTokens += row.outputTokens; target.totalTokens += totalTokens
   target.costUsd = target.costUsd === null || cost === null ? null : target.costUsd + cost
 }
+function addModelMetrics(byModel: Record<string, MetricValues>, row: UsageRow, totalTokens: number, cost: number | null) {
+  addMetrics(byModel[row.model] ?? (byModel[row.model] = emptyMetrics()), row, totalTokens, cost)
+}
+function trackSpan(target: { firstAt: number; lastAt: number }, row: UsageRow) {
+  target.firstAt = Math.min(target.firstAt, row.firstAt); target.lastAt = Math.max(target.lastAt, row.lastAt)
+}
+interface ProjectAccumulator extends ProjectOption, Counts, MetricValues {
+  byModel: Record<string, MetricValues>; hasSessions: boolean
+}
+interface SessionAccumulator extends MetricValues {
+  sessionId: string; firstAt: number; lastAt: number; models: Set<string>; subagentRequests: number; hasMainTranscript: boolean
+}
+function matches(row: UsageRow, query: UsageQuery): boolean {
+  return row.date >= query.from && row.date <= query.to
+    && (!query.project || row.projectDir === query.project)
+    // An explicit model overrides the family filter.
+    && (query.model ? row.model === query.model : !query.family || modelInfo(row.model).family.toLowerCase() === query.family)
+    && (query.agent === 'all' || row.agentType === query.agent)
+}
 export function queryUsage(indexer: UsageIndexer, query: UsageQuery) {
   const envelope = { index: indexer.status(), query, priceTable: { asOf: PRICE_TABLE_AS_OF, source: PRICE_TABLE_SOURCE } }
   if (envelope.index.state === 'building') return { ...envelope, data: null }
@@ -25,15 +44,12 @@ export function queryUsage(indexer: UsageIndexer, query: UsageQuery) {
   const sessions = new Set<string>()
   const unpriced = new Set<string>()
   const allModels = new Set<string>()
+  const projectRows = new Map<string, ProjectAccumulator>()
   const modelRows = new Map<string, ModelAccumulator>()
   const seriesMap = new Map(buckets(query).map(bucket => [bucket, Object.create(null) as Record<string, MetricValues>]))
   for (const { row } of indexer.rows.values()) {
     allModels.add(row.model)
-    if (row.date < query.from || row.date > query.to) continue
-    if (query.project && row.projectDir !== query.project) continue
-    // An explicit model overrides the family filter.
-    if (query.model ? row.model !== query.model : query.family && modelInfo(row.model).family.toLowerCase() !== query.family) continue
-    if (query.agent !== 'all' && row.agentType !== query.agent) continue
+    if (!matches(row, query)) continue
     const cost = estimateCost(row.model, row.speed, row)
     const input = inputTokensIncludingCache(row)
     const total = input + row.outputTokens
@@ -52,12 +68,24 @@ export function queryUsage(indexer: UsageIndexer, query: UsageQuery) {
     for (const field of TOKEN_FIELDS) model[field] += row[field]
     addMetrics(model, row, total, cost)
     model.inputTokensIncludingCache += input
-    model.firstAt = Math.min(model.firstAt, row.firstAt)
-    model.lastAt = Math.max(model.lastAt, row.lastAt)
+    trackSpan(model, row)
     if (row.sessionId) model.sessions.add(row.sessionId)
-    const byModel = seriesMap.get(bucketKey(row.date, query.groupBy))!
-    const metric = byModel[row.model] ?? (byModel[row.model] = emptyMetrics())
-    addMetrics(metric, row, total, cost)
+    let project = projectRows.get(row.projectDir)
+    if (!project) {
+      project = { ...indexer.projectOption(row.projectDir), ...emptyCounts(), ...emptyMetrics(),
+        byModel: Object.create(null), hasSessions: false }
+      projectRows.set(row.projectDir, project)
+    }
+    for (const field of TOKEN_FIELDS) project[field] += row[field]
+    addMetrics(project, row, total, cost)
+    addModelMetrics(project.byModel, row, total, cost)
+    addModelMetrics(seriesMap.get(bucketKey(row.date, query.groupBy))!, row, total, cost)
+  }
+  // Resolved after the loop so only projects that survived filtering pay for the file scan.
+  if (projectRows.size) for (const file of indexer.files.keys()) {
+    const slash = file.indexOf('/')
+    const project = slash > 0 ? projectRows.get(file.slice(0, slash)) : undefined
+    if (project && !project.hasSessions && isMainTranscript(file)) project.hasSessions = true
   }
   for (const byModel of seriesMap.values()) for (const id of modelRows.keys()) byModel[id] ??= emptyMetrics()
   totals.sessions = sessions.size; totals.models = modelRows.size; totals.cost.unpricedModels = [...unpriced].sort()
@@ -65,8 +93,31 @@ export function queryUsage(indexer: UsageIndexer, query: UsageQuery) {
     models: [...modelRows.values()].sort((a, b) => b.outputTokens - a.outputTokens || a.modelId.localeCompare(b.modelId))
       .map(({ sessions: ids, firstAt, lastAt, ...model }) => ({ ...model, sessions: ids.size,
         firstUsedAt: new Date(firstAt).toISOString(), lastUsedAt: new Date(lastAt).toISOString() })),
+    projects: [...projectRows.values()].sort((a, b) => b.outputTokens - a.outputTokens || a.projectDir.localeCompare(b.projectDir)),
     series: [...seriesMap].map(([bucket, byModel]) => ({ bucket, byModel })),
     filterOptions: { projects: [...indexer.projectOptions.values()].sort((a, b) => a.projectName.localeCompare(b.projectName)),
       models: [...allModels].sort().map(modelInfo) },
   } }
+}
+
+export function queryUsageSessions(indexer: UsageIndexer, query: UsageQuery, limit: number) {
+  const index = indexer.status()
+  const sessions = new Map<string, SessionAccumulator>()
+  if (index.state !== 'building') for (const { row } of indexer.rows.values()) {
+    if (!matches(row, query)) continue
+    let session = sessions.get(row.sessionId)
+    if (!session) {
+      session = { ...emptyMetrics(), sessionId: row.sessionId, firstAt: row.firstAt, lastAt: row.lastAt,
+        models: new Set(), subagentRequests: 0, hasMainTranscript: indexer.files.has(`${row.projectDir}/${row.sessionId}.jsonl`) }
+      sessions.set(row.sessionId, session)
+    }
+    addMetrics(session, row, inputTokensIncludingCache(row) + row.outputTokens, estimateCost(row.model, row.speed, row))
+    trackSpan(session, row)
+    session.models.add(row.model)
+    if (row.agentType === 'subagent') session.subagentRequests += row.requests
+  }
+  return { index, sessions: [...sessions.values()]
+    .sort((a, b) => b.outputTokens - a.outputTokens || a.sessionId.localeCompare(b.sessionId)).slice(0, limit)
+    .map(({ firstAt, lastAt, models, ...session }) => ({ ...session,
+      firstAt: new Date(firstAt).toISOString(), lastAt: new Date(lastAt).toISOString(), models: [...models].sort() })) }
 }

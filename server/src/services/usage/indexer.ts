@@ -21,6 +21,10 @@ export interface RowBucket { row: UsageRow; times: Map<string, number> }
 export interface ProjectOption { projectDir: string; projectPath: string; projectName: string }
 /** Earliest response time wins; equal times fall back to the smaller relative path. */
 const isEarlier = (ts: number, file: string, priorTs: number, priorFile: string) => ts < priorTs || (ts === priorTs && file < priorFile)
+/** Directory names encode the working directory with dashes; used when no transcript or index says otherwise. */
+const decodeProjectDir = (projectDir: string) => projectDir.replace(/^-/, '/').replace(/-/g, '/')
+const toProjectOption = (projectDir: string, projectPath: string): ProjectOption =>
+  ({ projectDir, projectPath, projectName: projectPath.split('/').filter(Boolean).at(-1) ?? projectDir })
 
 export class UsageIndexer {
   readonly projectsDir: string
@@ -45,6 +49,10 @@ export class UsageIndexer {
     this.idle = this.build().catch(error => { this.progress.state = 'error'; console.error('Usage index build failed:', error) })
   }
   whenIdle(): Promise<void> { return this.idle }
+  /** Rows outlive the options map when a build fails before it is filled, so derive a usable label instead of returning undefined. */
+  projectOption(projectDir: string): ProjectOption {
+    return this.projectOptions.get(projectDir) ?? toProjectOption(projectDir, decodeProjectDir(projectDir))
+  }
   status(): IndexStatus {
     const { state, filesTotal, filesIndexed, lastUpdatedAt, startedAt, skippedFiles } = this.progress
     return { state, filesTotal, filesIndexed, pendingFiles: filesTotal - filesIndexed, lastUpdatedAt, startedAt, skippedFiles }
@@ -184,9 +192,8 @@ export class UsageIndexer {
         const index = JSON.parse(await readFile(join(this.projectsDir, projectDir, 'sessions-index.json'), 'utf8'))
         if (typeof index.originalPath === 'string' && index.originalPath) originalPath = index.originalPath
       } catch { /* Optional metadata; transcripts remain authoritative. */ }
-      const projectPath = originalPath ?? earliest.get(projectDir)?.cwd ?? projectDir.replace(/^-/, '/').replace(/-/g, '/')
-      const projectName = projectPath.split('/').filter(Boolean).at(-1) ?? projectDir
-      this.projectOptions.set(projectDir, { projectDir, projectPath, projectName })
+      const projectPath = originalPath ?? earliest.get(projectDir)?.cwd ?? decodeProjectDir(projectDir)
+      this.projectOptions.set(projectDir, toProjectOption(projectDir, projectPath))
     }
   }
 }

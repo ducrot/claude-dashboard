@@ -2,13 +2,13 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { useUsageFilters } from '@/hooks/useUsageFilters'
 import { formatNumber } from '@/lib/utils'
-import { BuildingUsageIndex, UsageFilters, UsageKpis, UsageCharts, UsageModelsTable } from '@/components/usage'
+import { BuildingUsageIndex, UsageFilters, UsageKpis, UsageCharts, UsageModelsTable, UsageProjectsTable } from '@/components/usage'
 
 export default function Usage() {
   const filters = useUsageFilters()
   const { data: response, isLoading, error } = useQuery({
     queryKey: ['usage', filters.serverParams],
-    queryFn: () => api.usage(filters.serverParams),
+    queryFn: () => api.usage.get(filters.serverParams),
     refetchInterval: query => query.state.data?.index.state === 'building' ? 2000 : false,
   })
   return <div className="space-y-6">
@@ -23,6 +23,7 @@ export default function Usage() {
       <UsageKpis data={response.data} priceTable={response.priceTable} />
       <UsageCharts data={response.data} metric={filters.metric} onMetric={v => filters.set('metric', v)} />
       <UsageModelsTable models={response.data.models} metric={filters.metric} activeModel={filters.get('model')} onModel={v => filters.set('model', v)} />
+      <UsageProjectsTable projects={response.data.projects} models={response.data.models} metric={filters.metric} serverParams={filters.serverParams} />
     </>}
   </div>
 }

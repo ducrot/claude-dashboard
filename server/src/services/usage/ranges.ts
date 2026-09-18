@@ -34,6 +34,13 @@ export function resolveQuery(input: Record<string, unknown>, now: Date): UsageQu
   if (from > to) throw new Error('from must be on or before to')
   return { range, from: localDate(from), to: localDate(to), groupBy, agent, family, project: (input.project as string | undefined) ?? null, model: (input.model as string | undefined) ?? null }
 }
+export function parseLimit(input: unknown, fallback: number, max: number): number {
+  if (input === undefined) return fallback
+  if (typeof input !== 'string' || !/^\d+$/.test(input)) throw new Error('Invalid limit')
+  const limit = Number(input)
+  if (limit < 1 || limit > max) throw new Error(`limit must be between 1 and ${max}`)
+  return limit
+}
 export function bucketKey(day: string, groupBy: GroupBy): string {
   if (groupBy === 'month') return day.slice(0, 7)
   if (groupBy === 'day') return day
