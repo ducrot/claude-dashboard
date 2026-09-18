@@ -257,6 +257,7 @@ export const api = {
 }
 
 export interface UsageIndexStatus {
+  bytesRead: number; fullRereads: number
   state: 'building' | 'ready' | 'error'
   filesTotal: number; filesIndexed: number; pendingFiles: number
   lastUpdatedAt: string | null; startedAt: string | null; skippedFiles: number

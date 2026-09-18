@@ -1,12 +1,15 @@
-import { createReadStream } from 'node:fs'
-import { readdir, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import { setImmediate } from 'node:timers/promises'
+import { createHash } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
+import { EventEmitter } from 'node:events'
+import { open, readdir, readFile } from 'node:fs/promises'
+import { isAbsolute, join, relative, sep } from 'node:path'
+import { setImmediate, setTimeout as delay } from 'node:timers/promises'
 import { paths } from '../../config/paths.js'
 import { classifyPath, COUNT_FIELDS, mergePartials, parsePartialLine, type PartialRecord, type TranscriptUsage } from './transcript.js'
 import { localDate } from './ranges.js'
 
 export interface IndexStatus {
+  bytesRead: number; fullRereads: number
   state: 'building' | 'ready' | 'error'
   filesTotal: number; filesIndexed: number; pendingFiles: number
   lastUpdatedAt: string | null; startedAt: string | null; skippedFiles: number
@@ -27,7 +30,16 @@ const decodeProjectDir = (projectDir: string) => projectDir.replace(/^-/, '/').r
 const toProjectOption = (projectDir: string, projectPath: string): ProjectOption =>
   ({ projectDir, projectPath, projectName: projectPath.split('/').filter(Boolean).at(-1) ?? projectDir })
 
-export class UsageIndexer {
+export interface FileState {
+  size: number; mtimeMs: number; ino: number; offset: number; headHash: string; tailHash: string
+}
+/** Window size of each anchor; the tail reserves one byte for the newline it appends. */
+const ANCHOR = 4096
+const EMPTY = Buffer.alloc(0)
+const NEWLINE = Buffer.from('\n')
+const sha1 = (bytes: Buffer) => createHash('sha1').update(bytes).digest('hex')
+
+export class UsageIndexer extends EventEmitter {
   readonly projectsDir: string
   readonly clock: () => Date
   readonly files = new Map<string, Map<string, PartialRecord>>()
@@ -36,11 +48,22 @@ export class UsageIndexer {
   readonly toolRows = new Map<string, ToolRow>()
   readonly projectOptions = new Map<string, ProjectOption>()
   private readonly contributions = new Map<string, Contribution>()
+  readonly fileStates = new Map<string, FileState>()
+  private readonly pending = new Map<string, number>()
+  private readonly debounceMs: number
+  private readonly throttleMs: number
+  private draining = false
+  private processing = false
+  private lastEmitted = -Infinity
+  private updateTimer?: ReturnType<typeof setTimeout>
   private idle: Promise<void> = Promise.resolve()
   private started = false
-  private progress: Omit<IndexStatus, 'pendingFiles'> = { state: 'building', filesTotal: 0, filesIndexed: 0, lastUpdatedAt: null, startedAt: null, skippedFiles: 0 }
+  private progress: Omit<IndexStatus, 'pendingFiles'> = { bytesRead: 0, fullRereads: 0, state: 'building', filesTotal: 0, filesIndexed: 0, lastUpdatedAt: null, startedAt: null, skippedFiles: 0 }
 
-  constructor(options: { projectsDir?: string; clock?: () => Date } = {}) {
+  constructor(options: { projectsDir?: string; clock?: () => Date; debounceMs?: number; throttleMs?: number } = {}) {
+    super()
+    this.debounceMs = options.debounceMs ?? 1000
+    this.throttleMs = options.throttleMs ?? 5000
     this.projectsDir = options.projectsDir ?? paths.projects
     this.clock = options.clock ?? (() => new Date())
   }
@@ -50,14 +73,67 @@ export class UsageIndexer {
     this.progress.startedAt = this.clock().toISOString()
     this.idle = this.build().catch(error => { this.progress.state = 'error'; console.error('Usage index build failed:', error) })
   }
-  whenIdle(): Promise<void> { return this.idle }
+  async whenIdle(): Promise<void> {
+    let work
+    do { work = this.idle; await work } while (work !== this.idle)
+  }
+
+  notifyChanged(path: string): void {
+    const raw = isAbsolute(path) ? relative(this.projectsDir, path) : path
+    if (raw === '..' || raw.startsWith(`..${sep}`) || isAbsolute(raw)) return
+    // Indexed keys always use "/", while relative() uses the platform separator.
+    const file = raw.split(sep).join('/')
+    this.pending.set(file, Date.now() + this.debounceMs)
+    if (this.draining) return
+    this.draining = true
+    this.idle = this.idle.then(() => this.drain()).catch(error => {
+      this.progress.state = 'error'
+      console.error('Usage index update failed:', error)
+    }).finally(() => { this.draining = false })
+  }
+
+  private async drain(): Promise<void> {
+    while (this.pending.size) {
+      const due = Math.min(...this.pending.values())
+      if (due > Date.now()) { await delay(due - Date.now()); continue }
+      let changed = false
+      for (const [file, at] of this.pending) {
+        if (at > Date.now()) continue
+        // Delete before awaiting so a notification during the read queues another pass.
+        this.pending.delete(file)
+        this.processing = true
+        try { changed = await this.processSafely(file) || changed }
+        finally { this.processing = false }
+        await setImmediate()
+      }
+      if (changed) {
+        await this.buildProjectOptions()
+        this.progress.lastUpdatedAt = this.clock().toISOString()
+        this.emitUpdated()
+      }
+    }
+  }
+
+  private emitUpdated(): void {
+    if (this.updateTimer) return
+    const remaining = this.throttleMs - (Date.now() - this.lastEmitted)
+    if (remaining > 0) {
+      this.updateTimer = setTimeout(() => {
+        this.updateTimer = undefined
+        this.emitUpdated()
+      }, remaining)
+      this.updateTimer.unref()
+      return
+    }
+    this.lastEmitted = Date.now()
+    this.emit('updated')
+  }
   /** Rows outlive the options map when a build fails before it is filled, so derive a usable label instead of returning undefined. */
   projectOption(projectDir: string): ProjectOption {
     return this.projectOptions.get(projectDir) ?? toProjectOption(projectDir, decodeProjectDir(projectDir))
   }
   status(): IndexStatus {
-    const { state, filesTotal, filesIndexed, lastUpdatedAt, startedAt, skippedFiles } = this.progress
-    return { state, filesTotal, filesIndexed, pendingFiles: filesTotal - filesIndexed, lastUpdatedAt, startedAt, skippedFiles }
+    return { ...this.progress, pendingFiles: this.progress.filesTotal - this.progress.filesIndexed + this.pending.size + (this.processing ? 1 : 0) }
   }
 
   private async discover(directory = '', result: string[] = []): Promise<string[]> {
@@ -72,56 +148,123 @@ export class UsageIndexer {
     return result
   }
 
-  private async readPartials(file: string): Promise<Map<string, PartialRecord>> {
-    const partials = new Map<string, PartialRecord>()
-    const addLine = (line: Buffer, at: number) => {
-      const parsed = parsePartialLine(line.toString('utf8'), file, at)
-      if (!parsed) return
-      const previous = partials.get(parsed.id)
-      partials.set(parsed.id, previous ? mergePartials(previous, parsed) : parsed)
+  private replacePartials(file: string, partials?: Map<string, PartialRecord>): void {
+    const affected = new Set(this.files.get(file)?.keys())
+    for (const id of affected) {
+      const sources = this.responseFiles.get(id)!
+      sources.delete(file)
+      if (!sources.size) this.responseFiles.delete(id)
     }
-    // Chunks of an unterminated line are held and joined once, not re-joined per chunk.
-    let pending: Buffer[] = []
-    let lineStart = 0
-    let chunkStart = 0
-    for await (const chunk of createReadStream(join(this.projectsDir, file)) as AsyncIterable<Buffer>) {
-      let start = 0
-      let end: number
-      while ((end = chunk.indexOf(10, start)) !== -1) {
-        if (pending.length) {
-          pending.push(chunk.subarray(start, end))
-          addLine(Buffer.concat(pending), lineStart)
+    this.files.delete(file)
+    if (partials) {
+      this.files.set(file, partials)
+      for (const id of partials.keys()) {
+        let sources = this.responseFiles.get(id)
+        if (!sources) this.responseFiles.set(id, sources = new Set())
+        sources.add(file)
+        affected.add(id)
+      }
+    }
+    for (const id of affected) this.recompute(id)
+  }
+
+  private async processSafely(file: string): Promise<boolean> {
+    try { return await this.processFile(file) }
+    catch (error) {
+      this.progress.skippedFiles++
+      console.warn(`Skipping unreadable usage transcript ${file}:`, error)
+      return false
+    }
+  }
+
+  /** A vanished path drops its own state and every file indexed below it, so a removed directory takes its transcripts with it. */
+  private removeIndexed(file: string): boolean {
+    let changed = false
+    for (const indexed of this.fileStates.keys()) {
+      if (indexed === file || indexed.startsWith(file ? `${file}/` : '')) {
+        this.replacePartials(indexed)
+        this.fileStates.delete(indexed)
+        changed = true
+      }
+    }
+    return changed
+  }
+
+  private async processFile(file: string): Promise<boolean> {
+    let handle
+    try { handle = await open(join(this.projectsDir, file), 'r') }
+    catch (error) {
+      if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error
+      return this.removeIndexed(file)
+    }
+    try {
+      const stat = await handle.stat()
+      const { size, mtimeMs, ino } = stat
+      if (!stat.isFile() || !file.endsWith('.jsonl')) return false
+      const prior = this.fileStates.get(file)
+      const readAnchor = async (start: number, end: number) => {
+        const buffer = Buffer.alloc(end - start)
+        let read = 0
+        while (read < buffer.length) {
+          const { bytesRead } = await handle.read(buffer, read, buffer.length - read, start + read)
+          if (!bytesRead) break
+          read += bytesRead
+        }
+        return buffer.subarray(0, read)
+      }
+      // Only growth on the same inode behind two intact anchors can resume; every other rule falls through to a full re-read.
+      let full = true, head = EMPTY, tail = EMPTY, start = 0
+      if (prior && ino === prior.ino && size >= prior.size) {
+        if (size === prior.size && mtimeMs === prior.mtimeMs) return false
+        if (size > prior.size) {
+          const priorHead = await readAnchor(0, Math.min(prior.offset, ANCHOR))
+          const priorTail = await readAnchor(Math.max(0, prior.offset - ANCHOR), prior.offset)
+          if (sha1(priorHead) === prior.headHash && sha1(priorTail) === prior.tailHash) {
+            full = false; head = priorHead; tail = priorTail; start = prior.offset
+          }
+        }
+      }
+      if (full && prior) this.progress.fullRereads++
+      const partials = full ? new Map<string, PartialRecord>() : new Map(this.files.get(file))
+      let offset = start
+      let chunkStart = start
+      let pending: Buffer[] = []
+      // The descriptor and explicit end bind this pass to the pre-read stat, even during append/rename.
+      if (start < size) for await (const chunk of handle.createReadStream({ start, end: size - 1, autoClose: false }) as AsyncIterable<Buffer>) {
+        this.progress.bytesRead += chunk.length
+        let from = 0
+        let end: number
+        while ((end = chunk.indexOf(10, from)) !== -1) {
+          const line = pending.length ? Buffer.concat([...pending, chunk.subarray(from, end)]) : chunk.subarray(from, end)
+          // Anchors describe consumed bytes, not a second read that might see a concurrent rewrite.
+          if (head.length < ANCHOR) head = Buffer.concat([head, line.subarray(0, ANCHOR - head.length), NEWLINE]).subarray(0, ANCHOR)
+          tail = Buffer.concat([tail, line.subarray(Math.max(0, line.length - (ANCHOR - 1))), NEWLINE]).subarray(-ANCHOR)
+          const parsed = parsePartialLine(line.toString('utf8'), file, offset)
+          if (parsed) {
+            const previous = partials.get(parsed.id)
+            partials.set(parsed.id, previous ? mergePartials(previous, parsed) : parsed)
+          }
           pending = []
-        } else addLine(chunk.subarray(start, end), chunkStart + start)
-        start = end + 1
+          offset = chunkStart + end + 1
+          from = end + 1
+        }
+        if (from < chunk.length) pending.push(chunk.subarray(from))
+        chunkStart += chunk.length
       }
-      if (start < chunk.length) {
-        if (!pending.length) lineStart = chunkStart + start
-        pending.push(chunk.subarray(start))
-      }
-      chunkStart += chunk.length
-    }
-    // A trailing fragment is not a committed JSONL line; future incremental reads resume here.
-    return partials
+      const headHash = sha1(head)
+      const tailHash = sha1(tail)
+      const changed = !prior || !isDeepStrictEqual(this.files.get(file), partials)
+      this.fileStates.set(file, { size, mtimeMs, ino, offset, headHash, tailHash })
+      if (changed) this.replacePartials(file, partials)
+      return changed
+    } finally { await handle.close() }
   }
 
   private async build(): Promise<void> {
     const files = (await this.discover()).sort()
     this.progress.filesTotal = files.length
     for (const file of files) {
-      try {
-        const partials = await this.readPartials(file)
-        this.files.set(file, partials)
-        for (const id of partials.keys()) {
-          let sources = this.responseFiles.get(id)
-          if (!sources) this.responseFiles.set(id, sources = new Set())
-          sources.add(file)
-          this.recompute(id)
-        }
-      } catch (error) {
-        this.progress.skippedFiles++
-        console.warn(`Skipping unreadable usage transcript ${file}:`, error)
-      }
+      await this.processSafely(file)
       this.progress.filesIndexed++
       await setImmediate()
     }
@@ -191,6 +334,7 @@ export class UsageIndexer {
   }
 
   private async buildProjectOptions(): Promise<void> {
+    const options = new Map<string, ProjectOption>()
     const projects = new Set([...this.rows.values()].map(bucket => bucket.row.projectDir))
     const earliest = new Map<string, { ts: number; file: string; cwd?: string }>()
     for (const [file, partials] of this.files) {
@@ -211,7 +355,10 @@ export class UsageIndexer {
         if (typeof index.originalPath === 'string' && index.originalPath) originalPath = index.originalPath
       } catch { /* Optional metadata; transcripts remain authoritative. */ }
       const projectPath = originalPath ?? earliest.get(projectDir)?.cwd ?? decodeProjectDir(projectDir)
-      this.projectOptions.set(projectDir, toProjectOption(projectDir, projectPath))
+      options.set(projectDir, toProjectOption(projectDir, projectPath))
     }
+    // Swapped without awaiting, so a request never observes a half-filled map.
+    this.projectOptions.clear()
+    for (const [projectDir, option] of options) this.projectOptions.set(projectDir, option)
   }
 }

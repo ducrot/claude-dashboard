@@ -15,6 +15,8 @@ import { UsageIndexer } from './services/usage/indexer.js'
 import { createUsageRouter } from './routes/usage.js'
 
 const usageIndexer = new UsageIndexer()
+fileWatcher.on('transcript', (path: string) => usageIndexer.notifyChanged(path))
+usageIndexer.on('updated', () => fileWatcher.emit('change', { type: 'usage', path: '' }))
 usageIndexer.start()
 
 const app = express()

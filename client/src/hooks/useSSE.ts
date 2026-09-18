@@ -18,7 +18,10 @@ export function useSSE(options: SSEOptions = {}) {
         const data = JSON.parse(event.data)
 
         // Invalidate relevant queries based on file change type
-        if (data.type === 'plans') {
+        if (data.type === 'usage') {
+          queryClient.invalidateQueries({ queryKey: ['usage'] })
+          queryClient.invalidateQueries({ queryKey: ['stats'] })
+        } else if (data.type === 'plans') {
           queryClient.invalidateQueries({ queryKey: ['plans'] })
         } else if (data.type === 'tasks') {
           queryClient.invalidateQueries({ queryKey: ['tasks'] })

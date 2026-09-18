@@ -112,13 +112,13 @@ export function queryUsage(indexer: UsageIndexer, query: UsageQuery) {
   return { ...envelope, data: { totals,
     ...queryTools(indexer, query),
     effort: { series: [...effortSeries].map(([bucket, byEffort]) => ({ bucket, byEffort })),
-      byModel: [...effortModels].map(([modelId, byEffort]) => ({ modelId, byEffort })) },
+      byModel: [...effortModels].sort(([a], [b]) => a.localeCompare(b)).map(([modelId, byEffort]) => ({ modelId, byEffort })) },
     models: [...modelRows.values()].sort((a, b) => b.outputTokens - a.outputTokens || a.modelId.localeCompare(b.modelId))
       .map(({ sessions: ids, firstAt, lastAt, ...model }) => ({ ...model, sessions: ids.size,
         firstUsedAt: new Date(firstAt).toISOString(), lastUsedAt: new Date(lastAt).toISOString() })),
     projects: [...projectRows.values()].sort((a, b) => b.outputTokens - a.outputTokens || a.projectDir.localeCompare(b.projectDir)),
     series: [...seriesMap].map(([bucket, byModel]) => ({ bucket, byModel })),
-    filterOptions: { projects: [...indexer.projectOptions.values()].sort((a, b) => a.projectName.localeCompare(b.projectName)),
+    filterOptions: { projects: [...indexer.projectOptions.values()].sort((a, b) => a.projectName.localeCompare(b.projectName) || a.projectDir.localeCompare(b.projectDir)),
       models: [...allModels].sort().map(modelInfo) },
   } }
 }

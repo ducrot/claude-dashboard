@@ -1,27 +1,29 @@
+import { relative, isAbsolute, sep } from 'node:path'
 import { watch } from 'chokidar'
 import { EventEmitter } from 'events'
 import { paths } from '../config/paths.js'
 import { invalidateSubAgentsCache } from './subagents.js'
 
 export interface FileChangeEvent {
-  type: 'plans' | 'tasks' | 'todos' | 'stats' | 'sessions' | 'memory' | 'subagents'
+  type: 'plans' | 'tasks' | 'todos' | 'stats' | 'sessions' | 'memory' | 'subagents' | 'usage'
   path: string
 }
 
-class FileWatcher extends EventEmitter {
+export class FileWatcher extends EventEmitter {
   private watcher: ReturnType<typeof watch> | null = null
 
   start() {
     if (this.watcher) return
 
     const watchPaths = [
+      paths.projects, // Include directory deletion events as well as matching files.
       `${paths.plans}/**/*.md`,
       `${paths.tasks}/**/*.json`,
       `${paths.todos}/**/*.json`,
       paths.statsCache,
       `${paths.projects}/**/sessions-index.json`,
       `${paths.projects}/**/memory/*.md`,
-      `${paths.projects}/**/subagents/agent-*.jsonl`,
+      `${paths.projects}/**/*.jsonl`,
     ]
 
     this.watcher = watch(watchPaths, {
@@ -33,10 +35,20 @@ class FileWatcher extends EventEmitter {
     this.watcher.on('change', (path) => this.handleChange(path))
     this.watcher.on('unlink', (path) => this.handleChange(path))
 
+    this.watcher.on('unlinkDir', (path) => this.notifyTranscript(path, true))
+
     console.log('File watcher started')
   }
 
+  private notifyTranscript(filePath: string, directory = false) {
+    const path = relative(paths.projects, filePath)
+    if (path && path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path) && (directory || path.endsWith('.jsonl'))) {
+      this.emit('transcript', filePath)
+    }
+  }
+
   private handleChange(filePath: string) {
+    this.notifyTranscript(filePath)
     let type: FileChangeEvent['type']
 
     if (filePath.includes('/plans/')) {
