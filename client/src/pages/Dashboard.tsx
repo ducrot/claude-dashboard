@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { MessageSquare, Wrench, Coins, Clock, TrendingUp, Activity, Calendar } from 'lucide-react'
-import { BuildingUsageIndex } from '@/components/usage'
+import { BuildingUsageIndex, UsageIndexError } from '@/components/usage'
 import { api } from '@/lib/api'
 import { formatDayLabel, formatNumber } from '@/lib/utils'
 import {
@@ -40,6 +40,9 @@ export default function Dashboard() {
   }
 
   if (stats.index.state === 'building') return <BuildingUsageIndex index={stats.index} />
+
+  // A failed index yields zeroed or partial statistics, so say so instead of showing them as measured results.
+  if (stats.index.state === 'error') return <div className="flex items-center justify-center py-12"><UsageIndexError /></div>
 
   return (
     <div className="space-y-6">

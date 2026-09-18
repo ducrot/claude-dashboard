@@ -1,4 +1,5 @@
 export { BuildingUsageIndex } from './BuildingUsageIndex'
+export { UsageIndexError } from './UsageIndexError'
 export { UsageFilters } from './UsageFilters'
 export { UsageKpis } from './UsageKpis'
 export { UsageCharts } from './UsageCharts'

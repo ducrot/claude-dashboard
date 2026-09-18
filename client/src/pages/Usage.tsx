@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { useUsageFilters } from '@/hooks/useUsageFilters'
 import { formatNumber } from '@/lib/utils'
-import { BuildingUsageIndex, UsageFilters, UsageKpis, UsageCharts, UsageModelsTable, UsageProjectsTable, UsageTools, UsageEffort } from '@/components/usage'
+import { BuildingUsageIndex, UsageIndexError, UsageFilters, UsageKpis, UsageCharts, UsageModelsTable, UsageProjectsTable, UsageTools, UsageEffort } from '@/components/usage'
 
 export default function Usage() {
   const filters = useUsageFilters()
@@ -16,7 +16,7 @@ export default function Usage() {
     <UsageFilters filters={filters} response={response} />
     {isLoading && <p className="py-10 text-muted-foreground" role="status">Loading usage…</p>}
     {error && <p className="rounded-lg border border-destructive/30 p-4 text-destructive" role="alert">Could not load usage: {error.message.replace(/\s*\.?\s*$/, '')}. Check the selected dates and filters, and make sure the server is running.</p>}
-    {response?.index.state === 'error' && <p role="alert" className="text-destructive">The usage index could not be built. Check the server log and restart the server.</p>}
+    {response?.index.state === 'error' && <UsageIndexError />}
     {response?.index.state === 'building' && <BuildingUsageIndex index={response.index} />}
     {response?.data && <>
       <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground"><span>{response.query.from} — {response.query.to} · server-local dates</span><span>{formatNumber(response.index.filesIndexed)} transcript files indexed{response.index.skippedFiles > 0 ? ` · ${response.index.skippedFiles} skipped` : ''}</span></div>
