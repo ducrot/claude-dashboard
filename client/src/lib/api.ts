@@ -57,31 +57,20 @@ export interface TodoItem {
 export interface Stats {
   summary: {
     totalSessions: number
-    totalMessages: number
+    totalRequests: number
     totalToolCalls: number
-    totalTokens: number
-    avgMessagesPerSession: number
+    totalOutputTokens: number
+    avgRequestsPerSession: number
     avgToolCallsPerSession: number
   }
-  dailyActivity: Array<{
-    date: string
-    messages: number
-    toolCalls: number
-    sessions: number
-  }>
-  modelUsage: Array<{
-    model: string
-    tokens: number
-    percentage: number
-  }>
-  hourlyActivity: Array<{
-    hour: number
-    count: number
-  }>
+  dailyActivity: Array<{ date: string; requests: number; toolCalls: number; sessions: number }>
+  modelUsage: Array<UsageModelInfo & { outputTokens: number; percentage: number }>
+  hourlyActivity: Array<{ hour: number; requests: number }>
   insights: {
-    mostActiveDay: { date: string; messages: number } | null
-    peakHour: { hour: number; sessions: number } | null
+    mostActiveDay: { date: string; requests: number } | null
+    peakHour: { hour: number; requests: number } | null
   }
+  index: UsageIndexStatus
 }
 
 export interface Session {

@@ -9,11 +9,12 @@ import {
   Legend,
 } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { formatDayLabel } from '@/lib/utils'
 
 interface ActivityChartProps {
   data: Array<{
     date: string
-    messages: number
+    requests: number
     toolCalls: number
     sessions: number
   }>
@@ -23,10 +24,7 @@ export function ActivityChart({ data }: ActivityChartProps) {
   // Format data for display
   const formattedData = data.map((item) => ({
     ...item,
-    date: new Date(item.date).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-    }),
+    date: formatDayLabel(item.date),
   }))
 
   return (
@@ -62,11 +60,11 @@ export function ActivityChart({ data }: ActivityChartProps) {
               <Legend />
               <Line
                 type="monotone"
-                dataKey="messages"
+                dataKey="requests"
                 stroke="hsl(var(--primary))"
                 strokeWidth={2}
                 dot={false}
-                name="Messages"
+                name="Requests"
               />
               <Line
                 type="monotone"

@@ -39,7 +39,7 @@ The application reads Claude Code data from `~/.claude/`:
 - `tasks/` - Task JSON files
 - `todos/` - Todo JSON files
 - `projects/` - Session index files
-- `stats-cache.json` - Cached statistics
+- `projects/**/*.jsonl` - Transcript usage index for current, deduplicated Dashboard and Usage statistics
 
 ### Real-Time Updates
 

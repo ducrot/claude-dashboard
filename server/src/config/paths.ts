@@ -10,6 +10,5 @@ export const paths = {
   plans: join(CLAUDE_DIR, 'plans'),
   tasks: join(CLAUDE_DIR, 'tasks'),
   todos: join(CLAUDE_DIR, 'todos'),
-  statsCache: join(CLAUDE_DIR, 'stats-cache.json'),
   projects: join(CLAUDE_DIR, 'projects'),
 }

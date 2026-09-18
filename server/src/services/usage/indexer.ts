@@ -20,7 +20,8 @@ export interface UsageRow extends TranscriptUsage {
   requests: number; webSearchRequests: number; webFetchRequests: number; firstAt: number; lastAt: number
 }
 export interface ToolRow extends Pick<UsageRow, 'date' | 'model' | 'projectDir' | 'sessionId' | 'agentType'> { name: string; count: number }
-interface Contribution { key: string; row: UsageRow; tools: Map<string, ToolRow> }
+export interface HourRow { date: string; hour: number; requests: number }
+interface Contribution { key: string; row: UsageRow; tools: Map<string, ToolRow>; hour: number }
 /** A bucket row with the response times behind it, so a removal can restore firstAt/lastAt. */
 export interface RowBucket { row: UsageRow; times: Map<string, number> }
 export interface ProjectOption { projectDir: string; projectPath: string; projectName: string }
@@ -53,6 +54,7 @@ export class UsageIndexer extends EventEmitter {
   readonly files = new Map<string, Map<string, PartialRecord>>()
   readonly responseFiles = new Map<string, Set<string>>()
   readonly rows = new Map<string, RowBucket>()
+  readonly hourRows = new Map<string, HourRow>()
   readonly toolRows = new Map<string, ToolRow>()
   readonly projectOptions = new Map<string, ProjectOption>()
   private readonly contributions = new Map<string, Contribution>()
@@ -378,6 +380,7 @@ export class UsageIndexer extends EventEmitter {
         for (const time of times.values()) { row.firstAt = Math.min(row.firstAt, time); row.lastAt = Math.max(row.lastAt, time) }
       }
       for (const [key, tool] of previous.tools) this.addToolCount(key, tool, -tool.count)
+      this.addHourCount(previous.row.date, previous.hour, -1)
       this.contributions.delete(id)
     }
     let effective: PartialRecord | undefined
@@ -389,8 +392,9 @@ export class UsageIndexer extends EventEmitter {
     }
     if (!effective?.scalars.model || effective.ts === null || !attribution) return
     const tuple = classifyPath(attribution.file, attribution.partial)
+    const at = new Date(effective.ts)
     const row: UsageRow = {
-      ...tuple, date: localDate(new Date(effective.ts)), model: effective.scalars.model.value,
+      ...tuple, date: localDate(at), model: effective.scalars.model.value,
       effort: effective.scalars.effort?.value ?? 'unknown', speed: effective.scalars.speed?.value ?? '', requests: 1, firstAt: effective.ts, lastAt: effective.ts,
       inputTokens: effective.inputTokens, outputTokens: effective.outputTokens, cacheReadTokens: effective.cacheReadTokens,
       cacheWrite5mTokens: effective.cacheWrite5mTokens, cacheWrite1hTokens: effective.cacheWrite1hTokens,
@@ -405,7 +409,9 @@ export class UsageIndexer extends EventEmitter {
       else tools.set(toolKey, { ...tuple, date: row.date, model: row.model, name, count: 1 })
     }
     for (const [toolKey, tool] of tools) this.addToolCount(toolKey, tool, tool.count)
-    this.contributions.set(id, { key, row, tools })
+    const hour = at.getHours()
+    this.addHourCount(row.date, hour, 1)
+    this.contributions.set(id, { key, row, tools, hour })
     const bucket = this.rows.get(key)
     if (!bucket) this.rows.set(key, { row: { ...row }, times: new Map([[id, effective.ts]]) })
     else {
@@ -415,6 +421,14 @@ export class UsageIndexer extends EventEmitter {
       bucket.row.lastAt = Math.max(bucket.row.lastAt, row.lastAt)
       bucket.times.set(id, effective.ts)
     }
+  }
+
+  /** Hour rows follow the same response replacement/removal lifecycle as usage and tools. */
+  private addHourCount(date: string, hour: number, delta: number): void {
+    const key = JSON.stringify([date, hour])
+    const bucket = this.hourRows.get(key)
+    if (!bucket) this.hourRows.set(key, { date, hour, requests: delta })
+    else if (!(bucket.requests += delta)) this.hourRows.delete(key)
   }
 
   /** Tool rows share the usage rows' add/subtract path; a bucket that reaches zero disappears. */

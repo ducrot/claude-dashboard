@@ -4,7 +4,7 @@ import { fileWatcher } from './services/watcher.js'
 import plansRouter from './routes/plans.js'
 import tasksRouter from './routes/tasks.js'
 import todosRouter from './routes/todos.js'
-import statsRouter from './routes/stats.js'
+import { createStatsRouter } from './routes/stats.js'
 import sessionsRouter from './routes/sessions.js'
 import searchRouter from './routes/search.js'
 import projectsRouter from './routes/projects.js'
@@ -30,7 +30,7 @@ app.use(express.json())
 app.use('/api/plans', plansRouter)
 app.use('/api/tasks', tasksRouter)
 app.use('/api/todos', todosRouter)
-app.use('/api/stats', statsRouter)
+app.use('/api/stats', createStatsRouter(usageIndexer))
 app.use('/api/usage', createUsageRouter(usageIndexer))
 app.use('/api/sessions', sessionsRouter)
 app.use('/api/search', searchRouter)

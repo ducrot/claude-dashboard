@@ -17,6 +17,9 @@ test('usage SSE invalidates both usage (including sessions) and dashboard query 
     expect(source.url).toBe('/api/events')
     source.onmessage({ data: JSON.stringify({ type: 'usage', path: '' }) })
     expect(invalidateQueries.mock.calls).toEqual([[{ queryKey: ['usage'] }], [{ queryKey: ['stats'] }]])
+    invalidateQueries.mockClear()
+    source.onmessage({ data: JSON.stringify({ type: 'stats' }) })
+    expect(invalidateQueries).not.toHaveBeenCalled()
     cleanup()
     expect(source.close).toHaveBeenCalled()
   } finally { vi.unstubAllGlobals() }

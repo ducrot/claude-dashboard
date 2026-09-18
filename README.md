@@ -7,10 +7,12 @@ A web application for tracking and visualizing local Claude Code activity. Monit
 ## Features
 
 ### Analytics & Insights
-- **8 Key Metrics** - Total sessions, messages, tool calls, tokens, averages per session, most active day, and peak hour
-- **Daily Activity Chart** - 30-day trend of messages and tool calls with interactive line graph
-- **Model Usage Chart** - Token distribution across Claude models (Opus, Sonnet, Haiku)
-- **Hourly Activity Chart** - Session distribution by hour to identify usage patterns
+Dashboard statistics come from the deduplicated local transcript usage index and update as transcripts change.
+
+- **8 Key Metrics** - Total sessions, API requests, tool calls, output tokens, averages per session, most active day, and peak hour
+- **Daily Activity Chart** - 30-day trend of requests and tool calls with interactive line graph
+- **Model Usage Chart** - 30-day output tokens by model display name, with a link to Usage
+- **Hourly Activity Chart** - All-time request distribution by local hour to identify usage patterns
 
 ### Usage
 The **Usage** page (`/usage`) reads local session transcripts and counts each API response once across all files. Choose a date range, day/week/month grouping, project, model family, individual model or agent scope; filters and the chart metric stay in the URL. KPI cards, stacked model timelines, distribution bars and a model table show requests and token usage, with raw model IDs in tooltips. The Projects × Models table compares projects by the selected metric; expand a project to load its sessions and follow the available project and session detail links.
@@ -151,11 +153,11 @@ The application reads from the Claude Code local directory:
 ├── plans/              # Markdown plan files
 ├── tasks/              # Task JSON files
 ├── todos/              # Todo JSON files
-├── projects/           # Session index files, sub-agents, and per-project memory
-│   └── <project>/
-│       ├── <session>/subagents/  # Sub-agent JSONL transcripts
-│       └── memory/               # Auto memory markdown files
-└── stats-cache.json    # Cached statistics
+└── projects/           # Session indexes, transcripts, sub-agents, and memory
+    └── <project>/
+        ├── <session>.jsonl      # Main session transcripts
+        ├── <session>/subagents/ # Sub-agent JSONL transcripts
+        └── memory/              # Auto memory markdown files
 ```
 
 ### Environment Variables

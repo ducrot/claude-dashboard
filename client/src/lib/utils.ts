@@ -13,6 +13,11 @@ export function formatDate(date: string | Date): string {
   })
 }
 
+/** Noon-anchored so a YYYY-MM-DD local day is not shifted by the UTC parse. */
+export function formatDayLabel(date: string): string {
+  return new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 export function formatDateTime(date: string | Date): string {
   return new Date(date).toLocaleString('en-US', {
     year: 'numeric',

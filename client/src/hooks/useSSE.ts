@@ -27,8 +27,6 @@ export function useSSE(options: SSEOptions = {}) {
           queryClient.invalidateQueries({ queryKey: ['tasks'] })
         } else if (data.type === 'todos') {
           queryClient.invalidateQueries({ queryKey: ['todos'] })
-        } else if (data.type === 'stats') {
-          queryClient.invalidateQueries({ queryKey: ['stats'] })
         } else if (data.type === 'memory') {
           queryClient.invalidateQueries({ queryKey: ['memory'] })
         } else if (data.type === 'subagents') {

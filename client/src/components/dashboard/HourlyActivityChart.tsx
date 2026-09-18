@@ -12,14 +12,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 interface HourlyActivityChartProps {
   data: Array<{
     hour: number
-    count: number
+    requests: number
   }>
 }
 
 export function HourlyActivityChart({ data }: HourlyActivityChartProps) {
   const formattedData = data.map((item) => ({
     hour: `${item.hour.toString().padStart(2, '0')}:00`,
-    count: item.count,
+    requests: item.requests,
   }))
 
   return (
@@ -54,10 +54,10 @@ export function HourlyActivityChart({ data }: HourlyActivityChartProps) {
                 labelStyle={{ color: 'hsl(var(--foreground))' }}
               />
               <Bar
-                dataKey="count"
+                dataKey="requests"
                 fill="hsl(var(--primary))"
                 radius={[4, 4, 0, 0]}
-                name="Activity"
+                name="Requests"
               />
             </BarChart>
           </ResponsiveContainer>

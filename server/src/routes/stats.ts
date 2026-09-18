@@ -1,26 +1,10 @@
 import { Router } from 'express'
 import { getStats } from '../services/stats.js'
+import type { UsageIndexer } from '../services/usage/indexer.js'
 
-const router = Router()
-
-router.get('/', async (_req, res) => {
-  try {
-    const stats = await getStats()
-    res.json(stats)
-  } catch (error) {
-    console.error('Error fetching stats:', error)
-    res.status(500).json({ error: 'Failed to fetch stats' })
-  }
-})
-
-router.get('/summary', async (_req, res) => {
-  try {
-    const stats = await getStats()
-    res.json(stats.summary)
-  } catch (error) {
-    console.error('Error fetching stats summary:', error)
-    res.status(500).json({ error: 'Failed to fetch stats summary' })
-  }
-})
-
-export default router
+export function createStatsRouter(indexer: UsageIndexer): Router {
+  const router = Router()
+  router.get('/', (_req, res) => res.json(getStats(indexer)))
+  router.get('/summary', (_req, res) => res.json(getStats(indexer).summary))
+  return router
+}

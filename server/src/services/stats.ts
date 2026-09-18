@@ -1,170 +1,74 @@
-import { readFile } from 'fs/promises'
-import { paths } from '../config/paths.js'
+import type { IndexStatus, UsageIndexer } from './usage/indexer.js'
+import { modelInfo } from './usage/models.js'
+import { buckets, resolveQuery } from './usage/ranges.js'
 
 export interface Stats {
   summary: {
     totalSessions: number
-    totalMessages: number
+    totalRequests: number
     totalToolCalls: number
-    totalTokens: number
-    avgMessagesPerSession: number
+    totalOutputTokens: number
+    avgRequestsPerSession: number
     avgToolCallsPerSession: number
   }
-  dailyActivity: Array<{
-    date: string
-    messages: number
-    toolCalls: number
-    sessions: number
-  }>
-  modelUsage: Array<{
-    model: string
-    tokens: number
-    percentage: number
-  }>
-  hourlyActivity: Array<{
-    hour: number
-    count: number
-  }>
+  dailyActivity: Array<{ date: string; requests: number; toolCalls: number; sessions: number }>
+  modelUsage: Array<ReturnType<typeof modelInfo> & { outputTokens: number; percentage: number }>
+  hourlyActivity: Array<{ hour: number; requests: number }>
   insights: {
-    mostActiveDay: { date: string; messages: number } | null
-    peakHour: { hour: number; sessions: number } | null
+    mostActiveDay: { date: string; requests: number } | null
+    peakHour: { hour: number; requests: number } | null
   }
+  index: IndexStatus
 }
 
-// V2 format of stats-cache.json
-interface RawStatsCache {
-  version?: number
-  totalSessions?: number
-  totalMessages?: number
-  dailyActivity?: Array<{
-    date: string
-    messageCount: number
-    sessionCount: number
-    toolCallCount: number
-  }>
-  modelUsage?: Record<string, {
-    inputTokens?: number
-    outputTokens?: number
-    cacheReadInputTokens?: number
-    cacheCreationInputTokens?: number
-  }>
-  hourCounts?: Record<string, number>
-}
-
-export async function getStats(): Promise<Stats> {
-  try {
-    const content = await readFile(paths.statsCache, 'utf-8')
-    const raw: RawStatsCache = JSON.parse(content)
-
-    // Process daily activity from v2 format (array)
-    const rawDailyActivity = raw.dailyActivity || []
-    const dailyActivity = rawDailyActivity
-      .map((item) => ({
-        date: item.date,
-        messages: item.messageCount || 0,
-        toolCalls: item.toolCallCount || 0,
-        sessions: item.sessionCount || 0,
-      }))
-      .sort((a, b) => a.date.localeCompare(b.date))
-      .slice(-30) // Last 30 days
-
-    // Aggregate totals from daily activity
-    const totalToolCalls = rawDailyActivity.reduce(
-      (sum, item) => sum + (item.toolCallCount || 0),
-      0
-    )
-
-    // Process model usage from v2 format (includes cache tokens)
-    const modelEntries = Object.entries(raw.modelUsage || {})
-    const totalModelTokens = modelEntries.reduce((sum, [, data]) => {
-      return (
-        sum +
-        (data.inputTokens || 0) +
-        (data.outputTokens || 0) +
-        (data.cacheReadInputTokens || 0) +
-        (data.cacheCreationInputTokens || 0)
-      )
-    }, 0)
-
-    const modelUsage = modelEntries.map(([model, data]) => {
-      const tokens =
-        (data.inputTokens || 0) +
-        (data.outputTokens || 0) +
-        (data.cacheReadInputTokens || 0) +
-        (data.cacheCreationInputTokens || 0)
-      return {
-        model,
-        tokens,
-        percentage: totalModelTokens > 0 ? Math.round((tokens / totalModelTokens) * 100) : 0,
-      }
-    })
-
-    // Process hourly activity from v2 format (hourCounts)
-    const hourlyActivity = Array.from({ length: 24 }, (_, hour) => ({
-      hour,
-      count: raw.hourCounts?.[hour.toString()] || 0,
-    }))
-
-    // Calculate derived metrics
-    const totalSessions = raw.totalSessions || 0
-    const totalMessages = raw.totalMessages || 0
-    const avgMessagesPerSession = totalSessions > 0 ? Math.round(totalMessages / totalSessions) : 0
-    const avgToolCallsPerSession = totalSessions > 0 ? Math.round(totalToolCalls / totalSessions) : 0
-
-    // Find most active day
-    const mostActiveDay = rawDailyActivity.length > 0
-      ? rawDailyActivity.reduce((max, item) =>
-          item.messageCount > (max?.messageCount || 0) ? item : max
-        )
-      : null
-
-    // Find peak hour
-    const hourEntries = Object.entries(raw.hourCounts || {})
-    const peakHourEntry = hourEntries.length > 0
-      ? hourEntries.reduce((max, [hour, count]) =>
-          count > (max ? max[1] : 0) ? [hour, count] : max
-        )
-      : null
-
-    return {
-      summary: {
-        totalSessions,
-        totalMessages,
-        totalToolCalls,
-        totalTokens: totalModelTokens,
-        avgMessagesPerSession,
-        avgToolCallsPerSession,
-      },
-      dailyActivity,
-      modelUsage,
-      hourlyActivity,
-      insights: {
-        mostActiveDay: mostActiveDay
-          ? { date: mostActiveDay.date, messages: mostActiveDay.messageCount }
-          : null,
-        peakHour: peakHourEntry
-          ? { hour: parseInt(peakHourEntry[0], 10), sessions: peakHourEntry[1] }
-          : null,
-      },
+export function getStats(indexer: UsageIndexer): Stats {
+  const query = resolveQuery({}, indexer.clock())
+  const days = new Map(buckets(query).map(date => [date, { date, requests: 0, toolCalls: 0, sessions: new Set<string>() }]))
+  const sessions = new Set<string>()
+  const models = new Map<string, number>()
+  let totalRequests = 0, totalOutputTokens = 0, totalToolCalls = 0
+  for (const { row } of indexer.rows.values()) {
+    totalRequests += row.requests
+    totalOutputTokens += row.outputTokens
+    if (row.sessionId) sessions.add(row.sessionId)
+    const day = days.get(row.date)
+    if (day) {
+      day.requests += row.requests
+      if (row.sessionId) day.sessions.add(row.sessionId)
+      // Model usage is deliberately scoped to the same 30-day window as the daily chart.
+      models.set(row.model, (models.get(row.model) ?? 0) + row.outputTokens)
     }
-  } catch (error) {
-    console.error('Error reading stats cache:', error)
-    return {
-      summary: {
-        totalSessions: 0,
-        totalMessages: 0,
-        totalToolCalls: 0,
-        totalTokens: 0,
-        avgMessagesPerSession: 0,
-        avgToolCallsPerSession: 0,
-      },
-      dailyActivity: [],
-      modelUsage: [],
-      hourlyActivity: Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 })),
-      insights: {
-        mostActiveDay: null,
-        peakHour: null,
-      },
-    }
+  }
+  for (const row of indexer.toolRows.values()) {
+    totalToolCalls += row.count
+    const day = days.get(row.date)
+    if (day) day.toolCalls += row.count
+  }
+  const hourlyActivity = Array.from({ length: 24 }, (_, hour) => ({ hour, requests: 0 }))
+  const allDays = new Map<string, number>()
+  for (const row of indexer.hourRows.values()) {
+    hourlyActivity[row.hour].requests += row.requests
+    allDays.set(row.date, (allDays.get(row.date) ?? 0) + row.requests)
+  }
+  // All-time insights; stable ties pick the earliest day/hour.
+  let mostActiveDay: Stats['insights']['mostActiveDay'] = null
+  for (const [date, requests] of [...allDays].sort(([a], [b]) => a.localeCompare(b))) {
+    if (requests > (mostActiveDay?.requests ?? 0)) mostActiveDay = { date, requests }
+  }
+  let peakHour: Stats['insights']['peakHour'] = null
+  for (const row of hourlyActivity) if (row.requests > (peakHour?.requests ?? 0)) peakHour = { ...row }
+  const modelTotal = [...models.values()].reduce((sum, tokens) => sum + tokens, 0)
+  return {
+    summary: {
+      totalSessions: sessions.size, totalRequests, totalToolCalls, totalOutputTokens,
+      avgRequestsPerSession: sessions.size ? Math.round(totalRequests / sessions.size) : 0,
+      avgToolCallsPerSession: sessions.size ? Math.round(totalToolCalls / sessions.size) : 0,
+    },
+    dailyActivity: [...days.values()].map(day => ({ ...day, sessions: day.sessions.size })),
+    modelUsage: [...models].map(([id, outputTokens]) => ({ ...modelInfo(id), outputTokens, percentage: modelTotal ? Math.round(outputTokens / modelTotal * 100) : 0 }))
+      .sort((a, b) => b.outputTokens - a.outputTokens || a.modelId.localeCompare(b.modelId)),
+    hourlyActivity,
+    insights: { mostActiveDay, peakHour },
+    index: indexer.status(),
   }
 }

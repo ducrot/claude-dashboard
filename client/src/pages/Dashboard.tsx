@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { MessageSquare, Wrench, Coins, Clock, TrendingUp, Activity, Calendar } from 'lucide-react'
+import { BuildingUsageIndex } from '@/components/usage'
 import { api } from '@/lib/api'
-import { formatNumber } from '@/lib/utils'
+import { formatDayLabel, formatNumber } from '@/lib/utils'
 import {
   StatsCard,
   ActivityChart,
@@ -13,6 +14,7 @@ export default function Dashboard() {
   const { data: stats, isLoading, error } = useQuery({
     queryKey: ['stats'],
     queryFn: api.stats.get,
+    refetchInterval: query => query.state.data?.index.state === 'building' ? 2000 : false,
   })
 
   if (isLoading) {
@@ -37,6 +39,8 @@ export default function Dashboard() {
     return null
   }
 
+  if (stats.index.state === 'building') return <BuildingUsageIndex index={stats.index} />
+
   return (
     <div className="space-y-6">
       <div>
@@ -54,8 +58,8 @@ export default function Dashboard() {
           icon={<Clock className="h-4 w-4" />}
         />
         <StatsCard
-          title="Total Messages"
-          value={formatNumber(stats.summary.totalMessages)}
+          title="API Requests"
+          value={formatNumber(stats.summary.totalRequests)}
           icon={<MessageSquare className="h-4 w-4" />}
         />
         <StatsCard
@@ -64,8 +68,8 @@ export default function Dashboard() {
           icon={<Wrench className="h-4 w-4" />}
         />
         <StatsCard
-          title="Total Tokens"
-          value={formatNumber(stats.summary.totalTokens)}
+          title="Output Tokens"
+          value={formatNumber(stats.summary.totalOutputTokens)}
           icon={<Coins className="h-4 w-4" />}
         />
       </div>
@@ -73,8 +77,8 @@ export default function Dashboard() {
       {/* Stats Grid - Row 2 */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatsCard
-          title="Avg Messages/Session"
-          value={formatNumber(stats.summary.avgMessagesPerSession)}
+          title="Avg Requests/Session"
+          value={formatNumber(stats.summary.avgRequestsPerSession)}
           icon={<TrendingUp className="h-4 w-4" />}
         />
         <StatsCard
@@ -85,10 +89,10 @@ export default function Dashboard() {
         <StatsCard
           title="Most Active Day"
           value={stats.insights.mostActiveDay
-            ? new Date(stats.insights.mostActiveDay.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            ? formatDayLabel(stats.insights.mostActiveDay.date)
             : 'N/A'}
           description={stats.insights.mostActiveDay
-            ? `${formatNumber(stats.insights.mostActiveDay.messages)} messages`
+            ? `${formatNumber(stats.insights.mostActiveDay.requests)} requests`
             : undefined}
           icon={<Calendar className="h-4 w-4" />}
         />
@@ -98,7 +102,7 @@ export default function Dashboard() {
             ? `${stats.insights.peakHour.hour.toString().padStart(2, '0')}:00`
             : 'N/A'}
           description={stats.insights.peakHour
-            ? `${formatNumber(stats.insights.peakHour.sessions)} sessions`
+            ? `${formatNumber(stats.insights.peakHour.requests)} requests`
             : undefined}
           icon={<Clock className="h-4 w-4" />}
         />

@@ -5,7 +5,7 @@ import { paths } from '../config/paths.js'
 import { invalidateSubAgentsCache } from './subagents.js'
 
 export interface FileChangeEvent {
-  type: 'plans' | 'tasks' | 'todos' | 'stats' | 'sessions' | 'memory' | 'subagents' | 'usage'
+  type: 'plans' | 'tasks' | 'todos' | 'sessions' | 'memory' | 'subagents' | 'usage'
   path: string
 }
 
@@ -20,7 +20,6 @@ export class FileWatcher extends EventEmitter {
       `${paths.plans}/**/*.md`,
       `${paths.tasks}/**/*.json`,
       `${paths.todos}/**/*.json`,
-      paths.statsCache,
       `${paths.projects}/**/sessions-index.json`,
       `${paths.projects}/**/memory/*.md`,
       `${paths.projects}/**/*.jsonl`,
@@ -61,8 +60,6 @@ export class FileWatcher extends EventEmitter {
       type = 'todos'
     } else if (filePath.includes('/memory/')) {
       type = 'memory'
-    } else if (filePath.includes('stats-cache.json')) {
-      type = 'stats'
     } else if (filePath.includes('sessions-index.json')) {
       type = 'sessions'
     } else {
