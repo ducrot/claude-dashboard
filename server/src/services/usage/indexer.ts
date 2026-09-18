@@ -1,11 +1,12 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { EventEmitter } from 'node:events'
-import { open, readdir, readFile } from 'node:fs/promises'
-import { isAbsolute, join, relative, sep } from 'node:path'
+import { open, readdir, readFile, mkdir, writeFile, rename, rm } from 'node:fs/promises'
+import { isAbsolute, join, relative, sep, dirname } from 'node:path'
 import { setImmediate, setTimeout as delay } from 'node:timers/promises'
 import { paths } from '../../config/paths.js'
 import { classifyPath, COUNT_FIELDS, mergePartials, parsePartialLine, type PartialRecord, type TranscriptUsage } from './transcript.js'
+import { decodeCache, encodeCache } from './cache.js'
 import { localDate } from './ranges.js'
 
 export interface IndexStatus {
@@ -35,11 +36,18 @@ export interface FileState {
 }
 /** Window size of each anchor; the tail reserves one byte for the newline it appends. */
 const ANCHOR = 4096
+/** Shortest gap between two cache writes while the index is being updated. */
+const PERSIST_INTERVAL_MS = 30_000
 const EMPTY = Buffer.alloc(0)
 const NEWLINE = Buffer.from('\n')
 const sha1 = (bytes: Buffer) => createHash('sha1').update(bytes).digest('hex')
 
 export class UsageIndexer extends EventEmitter {
+  readonly cacheFile: string
+  private cacheTimer?: ReturnType<typeof setTimeout>
+  private cacheWrite: Promise<void> = Promise.resolve()
+  private lastPersisted = 0
+  private shutdownWork?: Promise<void>
   readonly projectsDir: string
   readonly clock: () => Date
   readonly files = new Map<string, Map<string, PartialRecord>>()
@@ -60,8 +68,9 @@ export class UsageIndexer extends EventEmitter {
   private started = false
   private progress: Omit<IndexStatus, 'pendingFiles'> = { bytesRead: 0, fullRereads: 0, state: 'building', filesTotal: 0, filesIndexed: 0, lastUpdatedAt: null, startedAt: null, skippedFiles: 0 }
 
-  constructor(options: { projectsDir?: string; clock?: () => Date; debounceMs?: number; throttleMs?: number } = {}) {
+  constructor(options: { projectsDir?: string; cacheFile?: string; clock?: () => Date; debounceMs?: number; throttleMs?: number } = {}) {
     super()
+    this.cacheFile = options.cacheFile ?? paths.usageCacheFile
     this.debounceMs = options.debounceMs ?? 1000
     this.throttleMs = options.throttleMs ?? 5000
     this.projectsDir = options.projectsDir ?? paths.projects
@@ -79,6 +88,7 @@ export class UsageIndexer extends EventEmitter {
   }
 
   notifyChanged(path: string): void {
+    if (this.closing) return
     const raw = isAbsolute(path) ? relative(this.projectsDir, path) : path
     if (raw === '..' || raw.startsWith(`..${sep}`) || isAbsolute(raw)) return
     // Indexed keys always use "/", while relative() uses the platform separator.
@@ -106,12 +116,24 @@ export class UsageIndexer extends EventEmitter {
         finally { this.processing = false }
         await setImmediate()
       }
+      this.schedulePersist()
       if (changed) {
-        await this.buildProjectOptions()
-        this.progress.lastUpdatedAt = this.clock().toISOString()
+        await this.refreshOptions()
         this.emitUpdated()
       }
     }
+  }
+
+  /** Project options and the update stamp always move together once an index pass changed something. */
+  private async refreshOptions(): Promise<void> {
+    await this.buildProjectOptions()
+    this.progress.lastUpdatedAt = this.clock().toISOString()
+  }
+
+  private async markReady(): Promise<void> {
+    await this.refreshOptions()
+    this.progress.filesIndexed = this.progress.filesTotal
+    this.progress.state = 'ready'
   }
 
   private emitUpdated(): void {
@@ -260,17 +282,86 @@ export class UsageIndexer extends EventEmitter {
     } finally { await handle.close() }
   }
 
+  private get closing(): boolean { return this.shutdownWork !== undefined }
+  private persistDelay(): number { return Math.max(0, PERSIST_INTERVAL_MS - (Date.now() - this.lastPersisted)) }
+
+  /** Serialized atomic writes prevent an older snapshot from replacing a newer one. */
+  async persist(throttled = false): Promise<void> {
+    this.cacheWrite = this.cacheWrite.then(async () => {
+      // Waiting for the queue can leave a throttled write inside the interval after all; re-arm instead.
+      if (throttled && this.persistDelay() > 0) {
+        this.schedulePersist()
+        return
+      }
+      const temporary = `${this.cacheFile}.${process.pid}.${randomUUID()}.tmp`
+      try {
+        // Encoding inside the guard keeps a failure from poisoning the queue; the last valid cache stays.
+        const text = encodeCache(this.projectsDir, this.fileStates, this.files)
+        await mkdir(dirname(this.cacheFile), { recursive: true })
+        await writeFile(temporary, text)
+        await rename(temporary, this.cacheFile)
+        this.lastPersisted = Date.now()
+      } catch (error) {
+        console.warn('Unable to persist usage cache:', error)
+        await rm(temporary, { force: true }).catch(() => {})
+      }
+    })
+    await this.cacheWrite
+  }
+
+  private schedulePersist(): void {
+    if (this.cacheTimer || this.closing) return
+    this.cacheTimer = setTimeout(() => {
+      this.cacheTimer = undefined
+      void this.whenIdle().then(() => this.persist(true)).catch(error => console.warn('Unable to persist usage cache:', error))
+    }, this.persistDelay())
+    this.cacheTimer.unref()
+  }
+
+  shutdown(): Promise<void> {
+    if (this.shutdownWork) return this.shutdownWork
+    clearTimeout(this.cacheTimer)
+    clearTimeout(this.updateTimer)
+    return this.shutdownWork = this.whenIdle().then(() => this.persist())
+  }
+
   private async build(): Promise<void> {
+    let cached
+    try { cached = decodeCache(await readFile(this.cacheFile, 'utf8'), this.projectsDir) }
+    catch { /* A derived cache is optional: missing, incompatible and corrupt files rebuild. */ }
     const files = (await this.discover()).sort()
     this.progress.filesTotal = files.length
-    for (const file of files) {
-      await this.processSafely(file)
-      this.progress.filesIndexed++
+    if (cached) {
+      for (const file of files) {
+        const state = cached.states.get(file)
+        if (!state) continue
+        this.fileStates.set(file, state)
+        this.replacePartials(file, cached.files.get(file))
+      }
+      await this.markReady()
+      console.log(`Usage index cache loaded (${this.fileStates.size} files); reconciling in background`)
+      this.emit('ready')
       await setImmediate()
+      let changed = false
+      for (const file of files) {
+        changed = await this.processSafely(file) || changed
+        await setImmediate()
+      }
+      if (changed) {
+        await this.refreshOptions()
+        this.emitUpdated()
+      }
+    } else {
+      console.log(`Building usage index (${files.length} files)`)
+      for (const file of files) {
+        await this.processSafely(file)
+        this.progress.filesIndexed++
+        await setImmediate()
+      }
+      await this.markReady()
+      this.emit('ready')
     }
-    await this.buildProjectOptions()
-    this.progress.lastUpdatedAt = this.clock().toISOString()
-    this.progress.state = 'ready'
+    await this.persist()
   }
 
   /** Removing the old contribution before adding its replacement also supports later file updates. */

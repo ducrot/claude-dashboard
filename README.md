@@ -17,7 +17,7 @@ The **Usage** page (`/usage`) reads local session transcripts and counts each AP
 
 Estimated cost is an **API list-price equivalent, not billed usage**. It uses the price table dated 2026-09-17, includes web search, and does not apply long-context surcharges. Unknown models and unsupported fast-mode prices show “No price”; the cost tooltip lists excluded models. Thinking tokens are already included in output tokens.
 
-The in-memory index scans transcripts at server startup and shows progress while building. Statistics mirror the transcripts currently on disk: additions and changes refresh automatically, and usage of deleted or cleaned-up transcripts disappears. Session and sub-agent detail pages count the responses in their own transcript file once. The Usage page counts each response once across all transcripts and includes sub-agent usage in session drilldowns, so figures for resumed or forked sessions and for sessions with sub-agents can differ. Usage also depends on the selected dates and filters, whereas detail totals cover the entire file.
+The index persists to `server/.cache/usage-index.json` for fast restarts and checks changed files in the background. This cache can be deleted safely: a rebuild shows progress and produces the same figures. Statistics mirror the transcripts currently on disk: additions and changes refresh automatically, and usage of deleted or cleaned-up transcripts disappears. Session and sub-agent detail pages count the responses in their own transcript file once. The Usage page counts each response once across all transcripts and includes sub-agent usage in session drilldowns, so figures for resumed or forked sessions and for sessions with sub-agents can differ. Usage also depends on the selected dates and filters, whereas detail totals cover the entire file.
 
 ### Plans Management
 - **Browse & Search** - Filter through all implementation plans with instant search
@@ -141,6 +141,8 @@ claude-dashboard/
 ## Configuration
 
 ### Data Directory
+
+`server/.cache/` holds the derived usage index; source data remains in `~/.claude/`.
 
 The application reads from the Claude Code local directory:
 

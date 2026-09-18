@@ -53,13 +53,15 @@ app.listen(PORT, () => {
 })
 
 // Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('\nShutting down...')
+let shuttingDown = false
+async function shutdown() {
+  if (shuttingDown) return
+  shuttingDown = true
   fileWatcher.stop()
+  // A stuck or failing cache flush must never keep the process alive.
+  const flushed = usageIndexer.shutdown().catch(error => console.warn('Usage cache flush failed:', error))
+  await Promise.race([flushed, new Promise(resolve => setTimeout(resolve, 5000))])
   process.exit(0)
-})
-
-process.on('SIGTERM', () => {
-  fileWatcher.stop()
-  process.exit(0)
-})
+}
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)

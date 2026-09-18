@@ -7,6 +7,7 @@ import { paths } from '../src/config/paths.js'
 import { UsageIndexer } from '../src/services/usage/indexer.js'
 import { createUsageRouter } from '../src/routes/usage.js'
 import sessions from '../src/routes/sessions.js'
+import { tempCacheFile } from './setup.js'
 
 const servers: Server[] = []
 let sequence = 0
@@ -21,7 +22,7 @@ async function fixture(files: Record<string, unknown[]>, start = true, root?: st
     await mkdir(join(projectsDir, file, '..'), { recursive: true })
     await writeFile(join(projectsDir, file), lines.map(v => typeof v === 'string' ? v : JSON.stringify(v)).join('\n') + '\n')
   }
-  const indexer = new UsageIndexer({ projectsDir, clock: now })
+  const indexer = new UsageIndexer({ cacheFile: tempCacheFile(), projectsDir, clock: now })
   const app = express().use('/api/usage', createUsageRouter(indexer)).use('/api/sessions', sessions)
   const server = await new Promise<Server>(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)) })
   servers.push(server)

@@ -8,6 +8,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { paths } from '../src/config/paths.js'
 import { UsageIndexer } from '../src/services/usage/indexer.js'
 import { createUsageRouter } from '../src/routes/usage.js'
+import { tempCacheFile } from './setup.js'
 
 const now = () => new Date('2026-09-18T12:00:00Z')
 const query = 'range=custom&from=2026-09-17&to=2026-09-18'
@@ -33,14 +34,14 @@ async function fixture(content: string, options = {}) {
   await mkdir(join(projectsDir, 'p'), { recursive: true })
   const file = join(projectsDir, 'p/a.jsonl')
   await writeFile(file, content)
-  const indexer = new UsageIndexer({ projectsDir, clock: now, debounceMs: 1, throttleMs: 0, ...options })
+  const indexer = new UsageIndexer({ cacheFile: tempCacheFile(), projectsDir, clock: now, debounceMs: 1, throttleMs: 0, ...options })
   indexer.start(); await indexer.whenIdle()
   const get = await endpoint(indexer)
   const update = async (path = file) => { indexer.notifyChanged(path); await indexer.whenIdle() }
   return { projectsDir, file, indexer, get, update }
 }
 async function freshIndexer(projectsDir: string) {
-  const fresh = new UsageIndexer({ projectsDir, clock: now })
+  const fresh = new UsageIndexer({ cacheFile: tempCacheFile(), projectsDir, clock: now })
   fresh.start(); await fresh.whenIdle()
   return endpoint(fresh)
 }
@@ -240,7 +241,7 @@ test('unconsumed fragments update file state without emitting an unchanged data 
 
 test('notifications arriving during startup are drained before whenIdle resolves', async () => {
   const f = await fixture(line('one'))
-  const indexer = new UsageIndexer({ projectsDir: f.projectsDir, clock: now, debounceMs: 1, throttleMs: 0 })
+  const indexer = new UsageIndexer({ cacheFile: tempCacheFile(), projectsDir: f.projectsDir, clock: now, debounceMs: 1, throttleMs: 0 })
   indexer.start()
   await appendFile(f.file, line('two')); indexer.notifyChanged(f.file)
   await indexer.whenIdle()

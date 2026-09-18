@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,6 +12,9 @@ process.env.HOME = testHome
 if (homedir() !== testHome) {
   throw new Error(`Home override failed: tests would write to ${homedir()}`)
 }
+
+// Resolved lazily: a static `paths` import would run before the home override above.
+export const tempCacheFile = () => join(homedir(), '.claude', `cache-${randomUUID()}.json`)
 
 afterAll(() => {
   rmSync(testHome, { recursive: true, force: true })

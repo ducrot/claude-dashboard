@@ -7,13 +7,14 @@ import { fileWatcher } from '../src/services/watcher.js'
 import { UsageIndexer } from '../src/services/usage/indexer.js'
 import events from '../src/routes/events.js'
 import { invalidateSubAgentsCache } from '../src/services/subagents.js'
+import { tempCacheFile } from './setup.js'
 
 vi.mock('../src/services/subagents.js', () => ({ invalidateSubAgentsCache: vi.fn() }))
 
 test('real watcher add/change/unlink/unlinkDir delivers transcript notifications and usage SSE, retaining subagent invalidation', async () => {
   const dir = join(paths.projects, 'watcher/subagents')
   await mkdir(dir, { recursive: true })
-  const indexer = new UsageIndexer({ debounceMs: 5, throttleMs: 0 })
+  const indexer = new UsageIndexer({ cacheFile: tempCacheFile(), debounceMs: 5, throttleMs: 0 })
   indexer.start(); await indexer.whenIdle()
   const notifications: string[] = []
   const notify = (path: string) => { notifications.push(path); indexer.notifyChanged(path) }
