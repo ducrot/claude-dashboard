@@ -9,8 +9,21 @@ export interface FileChangeEvent {
   path: string
 }
 
+// Budget behind Node's MaxListenersExceededWarning, applied to each event name
+// on this emitter. routes/events.ts registers one 'change' listener per SSE
+// connection, so the default 10 is reachable just by opening the dashboard in
+// ~11 tabs (React StrictMode briefly doubles connections per tab in dev).
+// Finite rather than 0 so a breach still means something: listeners surviving
+// their disconnect, a real leak.
+const MAX_LISTENERS = 100
+
 export class FileWatcher extends EventEmitter {
   private watcher: ReturnType<typeof watch> | null = null
+
+  constructor() {
+    super()
+    this.setMaxListeners(MAX_LISTENERS)
+  }
 
   start() {
     if (this.watcher) return

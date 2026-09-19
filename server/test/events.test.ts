@@ -4,6 +4,7 @@ import type { Server } from 'node:http'
 import { EventEmitter } from 'node:events'
 import { afterEach, expect, test, vi } from 'vitest'
 import { createEventsRouter } from '../src/routes/events.js'
+import { FileWatcher } from '../src/services/watcher.js'
 
 const servers: Server[] = []
 
@@ -106,6 +107,30 @@ test('change events reach every client independently and disconnects clean up li
   const handles = heartbeatHandles()
   await vi.waitFor(() =>
     expect(handles.every(handle => clearIntervalSpy.mock.calls.some(([cleared]) => cleared === handle))).toBe(true))
+})
+
+test('eleven concurrent SSE connections on a real FileWatcher stay warning-free and clean up', async () => {
+  const emitWarning = vi.spyOn(process, 'emitWarning').mockImplementation(() => {})
+  const watcher = new FileWatcher()
+  const url = await startServer(watcher)
+  const baseline = watcher.listenerCount('change')
+
+  const clients = await Promise.all(Array.from({ length: 11 }, async () => {
+    const client = await connect(url)
+    await client.waitForText('"type":"connected"')
+    return client
+  }))
+  expect(watcher.listenerCount('change')).toBe(baseline + 11)
+
+  watcher.emit('change', { type: 'usage', path: '/some/session.jsonl' })
+  await Promise.all(clients.map(client => client.waitForText('"type":"usage"')))
+
+  // Node's default cap of 10 would have tripped a MaxListenersExceededWarning
+  // on the eleventh connection; the watcher's raised budget keeps it quiet.
+  expect(emitWarning.mock.calls.filter(call => call.some(arg => String(arg).includes('MaxListeners')))).toHaveLength(0)
+
+  for (const client of clients) client.close()
+  await vi.waitFor(() => expect(watcher.listenerCount('change')).toBe(baseline))
 })
 
 test('a reconnecting client receives fresh events exactly once and keeps receiving heartbeats', async () => {
