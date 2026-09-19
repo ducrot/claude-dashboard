@@ -18,7 +18,8 @@ export default function Usage() {
     {error && <p className="rounded-lg border border-destructive/30 p-4 text-destructive" role="alert">Could not load usage: {error.message.replace(/\s*\.?\s*$/, '')}. Check the selected dates and filters, and make sure the server is running.</p>}
     {response?.index.state === 'error' && <UsageIndexError />}
     {response?.index.state === 'building' && <BuildingUsageIndex index={response.index} />}
-    {response?.data && <>
+    {/* A failed index yields zeroed or partial rows, so only a ready index renders data. */}
+    {response?.index.state === 'ready' && response.data && <>
       <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground"><span>{response.query.from} — {response.query.to} · server-local dates</span><span>{formatNumber(response.index.filesIndexed)} transcript files indexed{response.index.skippedFiles > 0 ? ` · ${response.index.skippedFiles} skipped` : ''}</span></div>
       <UsageKpis data={response.data} priceTable={response.priceTable} />
       <UsageCharts data={response.data} metric={filters.metric} onMetric={v => filters.set('metric', v)} />

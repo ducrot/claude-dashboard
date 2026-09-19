@@ -28,7 +28,7 @@ export default function Dashboard() {
   if (error) {
     return (
       <div className="flex items-center justify-center py-12">
-        <div className="text-destructive">
+        <div className="text-destructive" role="alert">
           Failed to load dashboard data. Make sure the server is running.
         </div>
       </div>
