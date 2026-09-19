@@ -416,6 +416,7 @@ test('bucket-by-dimension series cells are bounded for high dimension counts', a
   expect(over.error).toContain(`maximum of ${MAX_SERIES_CELLS}`)
 })
 
+// Drains in ~4 s unloaded, ~10 s with every core saturated; 30 s keeps ~3x margin so CPU contention cannot fail the suite.
 test('a bulk change draining a huge pending set never spreads call arguments', async () => {
   // The premise: this pending-set size exceeds the engine's argument limit for a spread call.
   expect(() => Math.min(...Array(250_000).fill(1))).toThrow()
@@ -425,7 +426,7 @@ test('a bulk change draining a huge pending set never spreads call arguments', a
   for (let i = 0; i < 250_000; i++) indexer.notifyChanged(`bulk-${i}/file-${i}.jsonl`)
   await indexer.whenIdle()
   expect(indexer.status()).toMatchObject({ state: 'ready', pendingFiles: 0 })
-})
+}, 30_000)
 
 test('tool names use timestamp then path then offset provenance as attribution moves', async () => {
   const { get } = await fixture({
