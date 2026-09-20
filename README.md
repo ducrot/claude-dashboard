@@ -15,13 +15,21 @@ Dashboard statistics come from the deduplicated local transcript usage index and
 - **Hourly Activity Chart** - All-time request distribution by local hour to identify usage patterns
 
 ### Usage
-The **Usage** page (`/usage`) reads local session transcripts and counts each API response once across all files. Choose a date range, day/week/month grouping, project, model family, individual model or agent scope; filters and the chart metric stay in the URL. KPI cards, stacked model timelines, distribution bars and a model table show requests and token usage, with raw model IDs in tooltips. The Projects × Models table compares projects by the selected metric; expand a project to load its sessions and follow the available project and session detail links.
+The **Usage** page (`/usage`) reads local session transcripts and counts each API response once across all files. Choose a date range, day/week/month grouping, project, model family, individual model or agent scope; filters and the chart metric (requests, input, output, total tokens or cost) stay in the URL.
+
+- **KPI Cards** - Requests, token totals and estimated cost for the selected range
+- **Model Timelines** - Stacked chart per bucket, plus distribution bars and a model table; raw model IDs in tooltips
+- **Projects × Models** - Compare projects by the selected metric; expand a project to load its sessions and follow project and session detail links
+- **Tool Usage** - Top 20 tools as bars plus a full table with count, share and session count; MCP tools optionally grouped by server
+- **Effort Levels** - Stacked effort distribution over time and per model share bars, with unpriced totals marked
 
 Custom ranges are bounded for memory safety: a request may plan at most 2,000 day/week/month buckets and 100,000 model-plus-effort series cells. Larger windows return a validation error suggesting a shorter range or a coarser grouping; presets and in-bound custom windows are unaffected.
 
 Estimated cost is an **API list-price equivalent, not billed usage**. It uses the price table dated 2026-09-17, includes web search, and does not apply long-context surcharges. Unknown models and unsupported fast-mode prices show “No price”; the cost tooltip lists excluded models. Thinking tokens are already included in output tokens.
 
-The index persists to `server/.cache/usage-index.json` for fast restarts and checks changed files in the background. This cache can be deleted safely: a rebuild shows progress and produces the same figures. Statistics mirror the transcripts currently on disk: additions and changes refresh automatically, and usage of deleted or cleaned-up transcripts disappears. Session and sub-agent detail pages count the responses in their own transcript file once. The Usage page counts each response once across all transcripts and includes sub-agent usage in session drilldowns, so figures for resumed or forked sessions and for sessions with sub-agents can differ. Usage also depends on the selected dates and filters, whereas detail totals cover the entire file.
+The index persists to `server/.cache/usage-index.json` for fast restarts and checks changed files in the background. This cache can be deleted safely: a rebuild shows progress and produces the same figures. While the index is building, both pages show progress instead of numbers; if the build fails, Usage and Dashboard show an error notice rather than the zeroed or partial values a failed index would otherwise report.
+
+Statistics mirror the transcripts currently on disk: additions and changes refresh automatically, and usage of deleted or cleaned-up transcripts disappears. Session and sub-agent detail pages count the responses in their own transcript file once. The Usage page counts each response once across all transcripts and includes sub-agent usage in session drilldowns, so figures for resumed or forked sessions and for sessions with sub-agents can differ. Usage also depends on the selected dates and filters, whereas detail totals cover the entire file.
 
 ### Plans Management
 - **Browse & Search** - Filter through all implementation plans with instant search
@@ -116,11 +124,12 @@ npm start
 claude-dashboard/
 ├── client/                     # React frontend
 │   ├── src/
-│   │   ├── pages/             # Page components (Dashboard, Plans, Tasks, Todos, SubAgents, Memory)
+│   │   ├── pages/             # Page components (Dashboard, Usage, Projects, Plans, Tasks, Todos, SubAgents, Memory)
 │   │   ├── components/
 │   │   │   ├── ui/            # Reusable UI components
 │   │   │   ├── layout/        # Layout components (Sidebar, Header)
 │   │   │   ├── dashboard/     # Dashboard-specific components
+│   │   │   ├── usage/         # Usage filters, charts, tables, tools and effort
 │   │   │   ├── plans/         # Plan display components
 │   │   │   ├── tasks/         # Task components
 │   │   │   ├── todos/         # Todo components
